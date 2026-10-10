@@ -1,0 +1,297 @@
+==================
+classes ranges and numeric syntax
+:language(gsed)
+==================
+s/\x5e[[:alpha:]a-z]*/\U&\E/g
+
+---
+
+(script
+  (command_list
+    (command
+      (substitute_command
+        name: (command_name)
+        opening: (delimiter)
+        (regular_expression
+          (alternation
+            (regex_branch
+              (anchor
+                (character_escape))
+              (repetition
+                expression: (bracket_expression
+                  opening: (bracket_open)
+                  (character_class
+                    (class_open)
+                    (compound_marker)
+                    name: (class_name
+                      (class_name_text))
+                    (compound_marker)
+                    (class_close))
+                  (range
+                    start: (bracket_character
+                      (literal))
+                    (range_operator)
+                    end: (bracket_character
+                      (literal)))
+                  closing: (bracket_close))
+                operator: (regex_operator)))))
+        separator: (delimiter)
+        (replacement
+          (case_conversion)
+          (matched_text_reference)
+          (case_conversion))
+        closing: (delimiter)
+        (substitution_flags
+          (flag))))
+    (command_separator)))
+
+==================
+numeric escaped UTF-8 character
+:language(gsed)
+==================
+s/\xce\xa3*/x/
+
+---
+
+(script
+  (command_list
+    (command
+      (substitute_command
+        name: (command_name)
+        opening: (delimiter)
+        (regular_expression
+          (alternation
+            (regex_branch
+              (repetition
+                expression: (regex_character
+                  (character_escape)
+                  (character_escape))
+                operator: (regex_operator)))))
+        separator: (delimiter)
+        (replacement
+          (literal))
+        closing: (delimiter)))
+    (command_separator)))
+
+==================
+host delimiter escape
+:language(gsed)
+==================
+s|a\|b|x|
+
+---
+
+(script
+  (command_list
+    (command
+      (substitute_command
+        name: (command_name)
+        opening: (delimiter)
+        (regular_expression
+          (alternation
+            (regex_branch
+              (regex_character
+                (literal))
+              (regex_character
+                (escape))
+              (regex_character
+                (literal)))))
+        separator: (delimiter)
+        (replacement
+          (literal))
+        closing: (delimiter)))
+    (command_separator)))
+
+==================
+groups alternatives and repeated operators
+:language(gsed)
+==================
+s/\(a\|\)\+a\{,2\}**/b/
+
+---
+
+(script
+  (command_list
+    (command
+      (substitute_command
+        name: (command_name)
+        opening: (delimiter)
+        (regular_expression
+          (alternation
+            (regex_branch
+              (repetition
+                expression: (group
+                  opening: (group_open)
+                  (regular_expression
+                    (alternation
+                      (regex_branch
+                        (regex_character
+                          (literal)))
+                      (regex_operator)))
+                  closing: (group_close))
+                operator: (regex_operator))
+              (repetition
+                expression: (regex_character
+                  (literal))
+                operator: (interval
+                  opening: (interval_open)
+                  (interval_separator)
+                  maximum: (interval_count
+                    (number))
+                  closing: (interval_close))
+                operator: (regex_operator)
+                operator: (regex_operator)))))
+        separator: (delimiter)
+        (replacement
+          (literal))
+        closing: (delimiter)))
+    (command_separator)))
+
+==================
+classes ranges and numeric syntax
+:language(gsed_ere)
+==================
+s/\x5e[[:alpha:]a-z]*/\U&\E/g
+
+---
+
+(script
+  (command_list
+    (command
+      (substitute_command
+        name: (command_name)
+        opening: (delimiter)
+        (regular_expression
+          (alternation
+            (regex_branch
+              (anchor
+                (character_escape))
+              (repetition
+                expression: (bracket_expression
+                  opening: (bracket_open)
+                  (character_class
+                    (class_open)
+                    (compound_marker)
+                    name: (class_name
+                      (class_name_text))
+                    (compound_marker)
+                    (class_close))
+                  (range
+                    start: (bracket_character
+                      (literal))
+                    (range_operator)
+                    end: (bracket_character
+                      (literal)))
+                  closing: (bracket_close))
+                operator: (regex_operator)))))
+        separator: (delimiter)
+        (replacement
+          (case_conversion)
+          (matched_text_reference)
+          (case_conversion))
+        closing: (delimiter)
+        (substitution_flags
+          (flag))))
+    (command_separator)))
+
+==================
+numeric escaped UTF-8 character
+:language(gsed_ere)
+==================
+s/\xce\xa3*/x/
+
+---
+
+(script
+  (command_list
+    (command
+      (substitute_command
+        name: (command_name)
+        opening: (delimiter)
+        (regular_expression
+          (alternation
+            (regex_branch
+              (repetition
+                expression: (regex_character
+                  (character_escape)
+                  (character_escape))
+                operator: (regex_operator)))))
+        separator: (delimiter)
+        (replacement
+          (literal))
+        closing: (delimiter)))
+    (command_separator)))
+
+==================
+host delimiter escape
+:language(gsed_ere)
+==================
+s|a\|b|x|
+
+---
+
+(script
+  (command_list
+    (command
+      (substitute_command
+        name: (command_name)
+        opening: (delimiter)
+        (regular_expression
+          (alternation
+            (regex_branch
+              (regex_character
+                (literal)))
+            (escape)
+            (regex_branch
+              (regex_character
+                (literal)))))
+        separator: (delimiter)
+        (replacement
+          (literal))
+        closing: (delimiter)))
+    (command_separator)))
+
+==================
+groups alternatives and repeated operators
+:language(gsed_ere)
+==================
+s/(a|)+a{,2}**/b/
+
+---
+
+(script
+  (command_list
+    (command
+      (substitute_command
+        name: (command_name)
+        opening: (delimiter)
+        (regular_expression
+          (alternation
+            (regex_branch
+              (repetition
+                expression: (group
+                  opening: (group_open)
+                  (regular_expression
+                    (alternation
+                      (regex_branch
+                        (regex_character
+                          (literal)))
+                      (regex_operator)))
+                  closing: (group_close))
+                operator: (regex_operator))
+              (repetition
+                expression: (regex_character
+                  (literal))
+                operator: (interval
+                  opening: (interval_open)
+                  (interval_separator)
+                  maximum: (interval_count
+                    (number))
+                  closing: (interval_close))
+                operator: (regex_operator)
+                operator: (regex_operator)))))
+        separator: (delimiter)
+        (replacement
+          (literal))
+        closing: (delimiter)))
+    (command_separator)))

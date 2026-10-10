@@ -1,0 +1,395 @@
+==================
+optional address counts and first relative addresses
+:language(gsed)
+==================
++p;~0p;+3p;1~p;1,+p
+{+}
+
+---
+
+(script
+  (command_list
+    (command
+      (address_clause
+        (relative_address
+          (address_operator)))
+      (simple_command
+        (command_name)))
+    (command_separator)
+    (command
+      (address_clause
+        (relative_address
+          (address_operator)
+          (number)))
+      (simple_command
+        (command_name)))
+    (command_separator)
+    (command
+      (address_clause
+        (relative_address
+          (address_operator)
+          (syntax_issue
+            (invalid_syntax
+              (invalid_relative_address
+                (number))))))
+      (simple_command
+        (command_name)))
+    (command_separator)
+    (command
+      (address_clause
+        (address
+          (line_address
+            (number)
+            (address_operator))))
+      (simple_command
+        (command_name)))
+    (command_separator)
+    (command
+      (address_clause
+        (address
+          (line_address
+            (number)))
+        (address_separator)
+        (relative_address
+          (address_operator)))
+      (simple_command
+        (command_name)))
+    (command_separator)
+    (command
+      (block
+        (syntax_issue
+          (invalid_syntax
+            (excess_address
+              (address_clause
+                (relative_address
+                  (address_operator))))))))
+    (command_separator)))
+
+==================
+control escape issues retain their operand
+:language(gsed)
+==================
+s/\c\./x/;s/a/\c\./;y/a/\c\./
+a \c\.
+
+---
+
+(script
+  (command_list
+    (command
+      (substitute_command
+        (command_name)
+        (delimiter)
+        (regular_expression
+          (alternation
+            (regex_branch
+              (syntax_issue
+                (invalid_syntax
+                  (invalid_control_escape
+                    (character_escape))))
+              (wildcard
+                (regex_operator)))))
+        (delimiter)
+        (replacement
+          (literal))
+        (delimiter)))
+    (command_separator)
+    (command
+      (substitute_command
+        (command_name)
+        (delimiter)
+        (regular_expression
+          (alternation
+            (regex_branch
+              (regex_character
+                (literal)))))
+        (delimiter)
+        (replacement
+          (syntax_issue
+            (invalid_syntax
+              (invalid_control_escape
+                (character_escape))))
+          (literal))
+        (delimiter)))
+    (command_separator)
+    (command
+      (translate_command
+        (command_name)
+        (delimiter)
+        (translation_string
+          (literal))
+        (delimiter)
+        (translation_string
+          (syntax_issue
+            (invalid_syntax
+              (invalid_control_escape
+                (character_escape))))
+          (literal))
+        (delimiter)))
+    (command_separator)
+    (command
+      (text_command
+        (command_name)
+        (text_introducer)
+        (text
+          (literal)
+          (escape))))
+    (command_separator)))
+
+==================
+control escapes follow delimiter processing
+:language(gsed)
+==================
+sc\c\.cxc;s/\c\\./x/;s/[\c\\]/x/
+
+---
+
+(script
+  (command_list
+    (command
+      (substitute_command
+        (command_name)
+        (delimiter)
+        (regular_expression
+          (alternation
+            (regex_branch
+              (regex_character
+                (escape))
+              (regex_character
+                (escape)))))
+        (delimiter)
+        (replacement
+          (literal))
+        (delimiter)))
+    (command_separator)
+    (command
+      (substitute_command
+        (command_name)
+        (delimiter)
+        (regular_expression
+          (alternation
+            (regex_branch
+              (regex_character
+                (character_escape))
+              (wildcard
+                (regex_operator)))))
+        (delimiter)
+        (replacement
+          (literal))
+        (delimiter)))
+    (command_separator)
+    (command
+      (substitute_command
+        (command_name)
+        (delimiter)
+        (regular_expression
+          (alternation
+            (regex_branch
+              (bracket_expression
+                (bracket_open)
+                (bracket_character
+                  (character_escape))
+                (bracket_close)))))
+        (delimiter)
+        (replacement
+          (literal))
+        (delimiter)))
+    (command_separator)))
+
+==================
+optional address counts and first relative addresses
+:language(gsed_ere)
+==================
++p;~0p;+3p;1~p;1,+p
+{+}
+
+---
+
+(script
+  (command_list
+    (command
+      (address_clause
+        (relative_address
+          (address_operator)))
+      (simple_command
+        (command_name)))
+    (command_separator)
+    (command
+      (address_clause
+        (relative_address
+          (address_operator)
+          (number)))
+      (simple_command
+        (command_name)))
+    (command_separator)
+    (command
+      (address_clause
+        (relative_address
+          (address_operator)
+          (syntax_issue
+            (invalid_syntax
+              (invalid_relative_address
+                (number))))))
+      (simple_command
+        (command_name)))
+    (command_separator)
+    (command
+      (address_clause
+        (address
+          (line_address
+            (number)
+            (address_operator))))
+      (simple_command
+        (command_name)))
+    (command_separator)
+    (command
+      (address_clause
+        (address
+          (line_address
+            (number)))
+        (address_separator)
+        (relative_address
+          (address_operator)))
+      (simple_command
+        (command_name)))
+    (command_separator)
+    (command
+      (block
+        (syntax_issue
+          (invalid_syntax
+            (excess_address
+              (address_clause
+                (relative_address
+                  (address_operator))))))))
+    (command_separator)))
+
+==================
+control escape issues retain their operand
+:language(gsed_ere)
+==================
+s/\c\./x/;s/a/\c\./;y/a/\c\./
+a \c\.
+
+---
+
+(script
+  (command_list
+    (command
+      (substitute_command
+        (command_name)
+        (delimiter)
+        (regular_expression
+          (alternation
+            (regex_branch
+              (syntax_issue
+                (invalid_syntax
+                  (invalid_control_escape
+                    (character_escape))))
+              (wildcard
+                (regex_operator)))))
+        (delimiter)
+        (replacement
+          (literal))
+        (delimiter)))
+    (command_separator)
+    (command
+      (substitute_command
+        (command_name)
+        (delimiter)
+        (regular_expression
+          (alternation
+            (regex_branch
+              (regex_character
+                (literal)))))
+        (delimiter)
+        (replacement
+          (syntax_issue
+            (invalid_syntax
+              (invalid_control_escape
+                (character_escape))))
+          (literal))
+        (delimiter)))
+    (command_separator)
+    (command
+      (translate_command
+        (command_name)
+        (delimiter)
+        (translation_string
+          (literal))
+        (delimiter)
+        (translation_string
+          (syntax_issue
+            (invalid_syntax
+              (invalid_control_escape
+                (character_escape))))
+          (literal))
+        (delimiter)))
+    (command_separator)
+    (command
+      (text_command
+        (command_name)
+        (text_introducer)
+        (text
+          (literal)
+          (escape))))
+    (command_separator)))
+
+==================
+control escapes follow delimiter processing
+:language(gsed_ere)
+==================
+sc\c\.cxc;s/\c\\./x/;s/[\c\\]/x/
+
+---
+
+(script
+  (command_list
+    (command
+      (substitute_command
+        (command_name)
+        (delimiter)
+        (regular_expression
+          (alternation
+            (regex_branch
+              (regex_character
+                (escape))
+              (regex_character
+                (escape)))))
+        (delimiter)
+        (replacement
+          (literal))
+        (delimiter)))
+    (command_separator)
+    (command
+      (substitute_command
+        (command_name)
+        (delimiter)
+        (regular_expression
+          (alternation
+            (regex_branch
+              (regex_character
+                (character_escape))
+              (wildcard
+                (regex_operator)))))
+        (delimiter)
+        (replacement
+          (literal))
+        (delimiter)))
+    (command_separator)
+    (command
+      (substitute_command
+        (command_name)
+        (delimiter)
+        (regular_expression
+          (alternation
+            (regex_branch
+              (bracket_expression
+                (bracket_open)
+                (bracket_character
+                  (character_escape))
+                (bracket_close)))))
+        (delimiter)
+        (replacement
+          (literal))
+        (delimiter)))
+    (command_separator)))

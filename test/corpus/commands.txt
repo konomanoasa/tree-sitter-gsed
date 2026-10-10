@@ -1,0 +1,439 @@
+==================
+commands and GNU address forms
+:language(gsed)
+==================
+0,/a/!{p;d}
+1~2p;3,+2d;4,~3p
+
+---
+
+(script
+  (command_list
+    (command
+      address: (address_clause
+        (address
+          (line_address
+            first: (number)))
+        (address_separator)
+        (address
+          (regex_address
+            opening: (delimiter)
+            (regular_expression
+              (alternation
+                (regex_branch
+                  (regex_character
+                    (literal)))))
+            closing: (delimiter))))
+      negation: (negation)
+      (block
+        (command_list
+          (command
+            (simple_command
+              name: (command_name)))
+          (command_separator)
+          (command
+            (simple_command
+              name: (command_name))))))
+    (command_separator)
+    (command
+      address: (address_clause
+        (address
+          (line_address
+            first: (number)
+            (address_operator)
+            step: (number))))
+      (simple_command
+        name: (command_name)))
+    (command_separator)
+    (command
+      address: (address_clause
+        (address
+          (line_address
+            first: (number)))
+        (address_separator)
+        (relative_address
+          (address_operator)
+          count: (number)))
+      (simple_command
+        name: (command_name)))
+    (command_separator)
+    (command
+      address: (address_clause
+        (address
+          (line_address
+            first: (number)))
+        (address_separator)
+        (relative_address
+          (address_operator)
+          count: (number)))
+      (simple_command
+        name: (command_name)))
+    (command_separator)))
+
+==================
+zero address read and opaque operands
+:language(gsed)
+==================
+0r file;name
+b loop
+:loop
+e echo hi; pwd
+
+---
+
+(script
+  (command_list
+    (command
+      address: (address_clause
+        (address
+          (line_address
+            first: (number))))
+      (file_command
+        name: (command_name)
+        file: (filename
+          (filename_text))))
+    (command_separator)
+    (command
+      (branch_command
+        name: (command_name)
+        label: (label
+          (label_text))))
+    (command_separator)
+    (command
+      (label_command
+        name: (command_name)
+        label: (label
+          (label_text))))
+    (command_separator)
+    (command
+      (execute_command
+        name: (command_name)
+        command: (shell_command
+          (shell_text))))
+    (command_separator)))
+
+==================
+text and translation
+:language(gsed)
+==================
+a hello; world
+i\
+first\
+second
+y/ab/xy/
+
+---
+
+(script
+  (command_list
+    (command
+      (text_command
+        name: (command_name)
+        (text
+          (literal))))
+    (command_separator)
+    (command
+      (text_command
+        name: (command_name)
+        (text_introducer)
+        (text
+          (literal)
+          (line_continuation)
+          (literal))))
+    (command_separator)
+    (command
+      (translate_command
+        name: (command_name)
+        opening: (delimiter)
+        source: (translation_string
+          (literal))
+        separator: (delimiter)
+        destination: (translation_string
+          (literal))
+        closing: (delimiter)))
+    (command_separator)))
+
+==================
+GNU numeric commands
+:language(gsed)
+==================
+q42;Q0;l80;v4.10;F;z
+
+---
+
+(script
+  (command_list
+    (command
+      (numeric_command
+        name: (command_name)
+        argument: (number)))
+    (command_separator)
+    (command
+      (numeric_command
+        name: (command_name)
+        argument: (number)))
+    (command_separator)
+    (command
+      (numeric_command
+        name: (command_name)
+        argument: (number)))
+    (command_separator)
+    (command
+      (version_command
+        name: (command_name)
+        version: (version
+          (version_text))))
+    (command_separator)
+    (command
+      (simple_command
+        name: (command_name)))
+    (command_separator)
+    (command
+      (simple_command
+        name: (command_name)))
+    (command_separator)))
+
+==================
+directive and comments
+:language(gsed)
+==================
+#n quiet
+# plain
+!# negated
+
+---
+
+(script
+  (command_list
+    (directive
+      (directive_text)
+      (comment_text))
+    (command_separator)
+    (comment
+      (comment_text))
+    (command_separator)
+    (command
+      negation: (negation)
+      (comment
+        (comment_text)))
+    (command_separator)))
+
+==================
+commands and GNU address forms
+:language(gsed_ere)
+==================
+0,/a/!{p;d}
+1~2p;3,+2d;4,~3p
+
+---
+
+(script
+  (command_list
+    (command
+      address: (address_clause
+        (address
+          (line_address
+            first: (number)))
+        (address_separator)
+        (address
+          (regex_address
+            opening: (delimiter)
+            (regular_expression
+              (alternation
+                (regex_branch
+                  (regex_character
+                    (literal)))))
+            closing: (delimiter))))
+      negation: (negation)
+      (block
+        (command_list
+          (command
+            (simple_command
+              name: (command_name)))
+          (command_separator)
+          (command
+            (simple_command
+              name: (command_name))))))
+    (command_separator)
+    (command
+      address: (address_clause
+        (address
+          (line_address
+            first: (number)
+            (address_operator)
+            step: (number))))
+      (simple_command
+        name: (command_name)))
+    (command_separator)
+    (command
+      address: (address_clause
+        (address
+          (line_address
+            first: (number)))
+        (address_separator)
+        (relative_address
+          (address_operator)
+          count: (number)))
+      (simple_command
+        name: (command_name)))
+    (command_separator)
+    (command
+      address: (address_clause
+        (address
+          (line_address
+            first: (number)))
+        (address_separator)
+        (relative_address
+          (address_operator)
+          count: (number)))
+      (simple_command
+        name: (command_name)))
+    (command_separator)))
+
+==================
+zero address read and opaque operands
+:language(gsed_ere)
+==================
+0r file;name
+b loop
+:loop
+e echo hi; pwd
+
+---
+
+(script
+  (command_list
+    (command
+      address: (address_clause
+        (address
+          (line_address
+            first: (number))))
+      (file_command
+        name: (command_name)
+        file: (filename
+          (filename_text))))
+    (command_separator)
+    (command
+      (branch_command
+        name: (command_name)
+        label: (label
+          (label_text))))
+    (command_separator)
+    (command
+      (label_command
+        name: (command_name)
+        label: (label
+          (label_text))))
+    (command_separator)
+    (command
+      (execute_command
+        name: (command_name)
+        command: (shell_command
+          (shell_text))))
+    (command_separator)))
+
+==================
+text and translation
+:language(gsed_ere)
+==================
+a hello; world
+i\
+first\
+second
+y/ab/xy/
+
+---
+
+(script
+  (command_list
+    (command
+      (text_command
+        name: (command_name)
+        (text
+          (literal))))
+    (command_separator)
+    (command
+      (text_command
+        name: (command_name)
+        (text_introducer)
+        (text
+          (literal)
+          (line_continuation)
+          (literal))))
+    (command_separator)
+    (command
+      (translate_command
+        name: (command_name)
+        opening: (delimiter)
+        source: (translation_string
+          (literal))
+        separator: (delimiter)
+        destination: (translation_string
+          (literal))
+        closing: (delimiter)))
+    (command_separator)))
+
+==================
+GNU numeric commands
+:language(gsed_ere)
+==================
+q42;Q0;l80;v4.10;F;z
+
+---
+
+(script
+  (command_list
+    (command
+      (numeric_command
+        name: (command_name)
+        argument: (number)))
+    (command_separator)
+    (command
+      (numeric_command
+        name: (command_name)
+        argument: (number)))
+    (command_separator)
+    (command
+      (numeric_command
+        name: (command_name)
+        argument: (number)))
+    (command_separator)
+    (command
+      (version_command
+        name: (command_name)
+        version: (version
+          (version_text))))
+    (command_separator)
+    (command
+      (simple_command
+        name: (command_name)))
+    (command_separator)
+    (command
+      (simple_command
+        name: (command_name)))
+    (command_separator)))
+
+==================
+directive and comments
+:language(gsed_ere)
+==================
+#n quiet
+# plain
+!# negated
+
+---
+
+(script
+  (command_list
+    (directive
+      (directive_text)
+      (comment_text))
+    (command_separator)
+    (comment
+      (comment_text))
+    (command_separator)
+    (command
+      negation: (negation)
+      (comment
+        (comment_text)))
+    (command_separator)))
