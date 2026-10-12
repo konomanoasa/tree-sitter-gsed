@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { createTreeSitter } from "../scripts/tree-sitter.js";
 
+const firstThemeColor = 17;
+
 function decodeEntities(text) {
   return text
     .replaceAll("&lt;", "<")
@@ -60,7 +62,7 @@ function assertCaptures(source, actual, ranges) {
     previousEnd = end;
   }
   for (const [index, byte] of bytes.entries()) {
-    if (byte !== 10)
+    if (byte !== 0x0a)
       assert.equal(
         actual[index],
         expected[index],
@@ -93,7 +95,7 @@ before(() => {
   runner = createTreeSitter();
   const config = JSON.parse(readFileSync(runner.configPath, "utf8"));
   config.theme = Object.fromEntries(
-    captures.map((name, index) => [name, index + 17]),
+    captures.map((name, index) => [name, index + firstThemeColor]),
   );
   writeFileSync(runner.configPath, JSON.stringify(config));
   writeFileSync(

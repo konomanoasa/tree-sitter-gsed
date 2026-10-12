@@ -15,7 +15,7 @@ npm install @konomanoasa/tree-sitter-gsed
 
 ## Grammars
 
-Choose one grammar for the whole document.
+BRE and ERE have different syntax, so we use separate grammars.
 
 | Grammar    | Description           |
 | ---------- | --------------------- |
@@ -35,6 +35,10 @@ npm test
 ## Specification
 
 [GNU sed Manual 4.10](https://www.gnu.org/software/sed/manual/sed.html)
+
+## Used By
+
+[sed-ts-mode](https://github.com/konomanoasa/sed-ts-mode): Emacs major mode.
 
 ## License
 

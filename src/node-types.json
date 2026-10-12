@@ -124,10 +124,6 @@
           "named": true
         },
         {
-          "type": "escape",
-          "named": true
-        },
-        {
           "type": "regex_reference",
           "named": true
         }
@@ -1024,7 +1020,19 @@
           "named": true
         },
         {
+          "type": "invalid_interval_character",
+          "named": true
+        },
+        {
           "type": "invalid_interval_syntax",
+          "named": true
+        },
+        {
+          "type": "invalid_range_operator",
+          "named": true
+        },
+        {
+          "type": "invalid_regex_operator",
           "named": true
         },
         {
@@ -1065,6 +1073,10 @@
         },
         {
           "type": "unknown_character_class",
+          "named": true
+        },
+        {
+          "type": "unmatched_group_close",
           "named": true
         },
         {
@@ -1115,7 +1127,7 @@
         ]
       },
       "maximum": {
-        "multiple": false,
+        "multiple": true,
         "required": false,
         "types": [
           {
@@ -1125,7 +1137,7 @@
         ]
       },
       "minimum": {
-        "multiple": false,
+        "multiple": true,
         "required": false,
         "types": [
           {
@@ -1807,7 +1819,7 @@
       }
     },
     "children": {
-      "multiple": false,
+      "multiple": true,
       "required": true,
       "types": [
         {
@@ -1981,10 +1993,6 @@
       "types": [
         {
           "type": "character_escape",
-          "named": true
-        },
-        {
-          "type": "escape",
           "named": true
         },
         {
@@ -2716,10 +2724,6 @@
       "types": [
         {
           "type": "character_escape",
-          "named": true
-        },
-        {
-          "type": "escape",
           "named": true
         },
         {

@@ -1,5 +1,9 @@
-#include "../common/scanner.h"
 #include <assert.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <string.h>
+
+#include "../common/scanner.h"
 
 typedef struct {
   TSLexer lexer;
@@ -17,14 +21,17 @@ static void input_advance(TSLexer *lexer, bool skip) {
     ? (unsigned char)input->source[input->offset]
     : 0;
 }
+
 static void input_mark(TSLexer *lexer) {
   Input *input = (Input *)lexer;
   input->end = input->offset;
 }
+
 static bool input_eof(const TSLexer *lexer) {
   const Input *input = (const Input *)lexer;
   return input->offset == input->size;
 }
+
 static Input input_for(const char *source, size_t length) {
   Input input = {0};
   input.source = source;
@@ -35,12 +42,14 @@ static Input input_for(const char *source, size_t length) {
   input.lexer.lookahead = length ? (unsigned char)source[0] : 0;
   return input;
 }
+
 static void rewind_to_end(Input *input) {
   input->offset = input->end;
   input->lexer.lookahead = input->offset < input->size
     ? (unsigned char)input->source[input->offset]
     : 0;
 }
+
 static void check_regex_restoration(
   const char *source,
   const enum TokenType *expected,
@@ -66,18 +75,22 @@ static void check_regex_restoration(
     assert(scan(&restored, &replay.lexer, valid));
     assert(input.lexer.result_symbol == expected[i]);
     assert(replay.lexer.result_symbol == input.lexer.result_symbol);
+    assert(replay.offset == input.offset);
     assert(replay.end == input.end);
     char replay_state[TREE_SITTER_SERIALIZATION_BUFFER_SIZE];
     char next_state[TREE_SITTER_SERIALIZATION_BUFFER_SIZE];
-    assert(
-      serialize(&scanner, next_state) == serialize(&restored, replay_state)
-    );
-    assert(memcmp(next_state, replay_state, length) == 0);
+    unsigned next_length = serialize(&scanner, next_state);
+    unsigned replay_length = serialize(&restored, replay_state);
+    assert(next_length <= sizeof(next_state));
+    assert(replay_length <= sizeof(replay_state));
+    assert(next_length == replay_length);
+    assert(memcmp(next_state, replay_state, next_length) == 0);
     rewind_to_end(&input);
   }
   assert(input.offset == input.size);
 }
-int main(void) {
+
+static void test_regex_state_restoration(void) {
   const enum TokenType bracket[] = {
     BRACKET_OPEN_ENCODED,
     BRACKET_CHARACTER,
@@ -213,18 +226,29 @@ int main(void) {
     backslash_delimiter,
     sizeof(backslash_delimiter) / sizeof(backslash_delimiter[0])
   );
+}
+
+static void test_nul_is_a_regex_character(void) {
+  const char source[] = "/\0/";
+  const struct {
+    enum TokenType token;
+    size_t end;
+  } expected[] = {{PATTERN_START, 1}, {REGEX_CHARACTER, 2}, {PATTERN_END, 3}};
   Scanner scanner = {0};
-  Input nul = input_for("/\0/", 3);
-  bool valid[TOKEN_COUNT] = {false};
-  valid[PATTERN_START] = true;
-  assert(scan(&scanner, &nul.lexer, valid));
-  valid[PATTERN_START] = false;
-  valid[REGEX_CHARACTER] = true;
-  assert(scan(&scanner, &nul.lexer, valid));
-  assert(nul.offset == 2);
-  valid[REGEX_CHARACTER] = false;
-  valid[PATTERN_END] = true;
-  assert(scan(&scanner, &nul.lexer, valid));
-  assert(nul.offset == 3);
+  Input input = input_for(source, sizeof(source) - 1);
+  for (size_t i = 0; i < sizeof(expected) / sizeof(expected[0]); i++) {
+    bool valid[TOKEN_COUNT] = {false};
+    valid[expected[i].token] = true;
+    assert(scan(&scanner, &input.lexer, valid));
+    assert(input.lexer.result_symbol == expected[i].token);
+    assert(input.offset == expected[i].end);
+    rewind_to_end(&input);
+  }
+  assert(input.offset == input.size);
+}
+
+int main(void) {
+  test_regex_state_restoration();
+  test_nul_is_a_regex_character();
   return 0;
 }

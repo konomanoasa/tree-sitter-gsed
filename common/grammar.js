@@ -5,23 +5,21 @@ export const symbols = [
   "quantifier",
   "interval_open",
   "interval_close",
+  "interval_comma",
+  "count",
   "bracket_open",
   "bracket_close",
   "bracket_negation",
   "range_dash",
+  "range_continuation",
   "regex_dot",
   "regex_anchor",
-  "regex_boundary",
-  "regex_class_escape",
-  "regex_backreference",
-  "interval_comma",
   "invalid_regex_operator",
   "unmatched_group_close",
   "orphan_interval_open",
   "invalid_range_operator",
+  "incomplete_range_operator",
   "invalid_interval_character",
-  "invalid_interval_syntax",
-  "incomplete_interval_syntax",
   "class_open",
   "collating_open",
   "equivalence_open",
@@ -32,131 +30,94 @@ export const symbols = [
   "term_text",
 ];
 
+// Escaped delimiters cannot form these backslash-only symbols.
+const quotedSymbols = [
+  "regex_boundary",
+  "regex_class_escape",
+  "regex_backreference",
+  "invalid_interval_syntax",
+  "incomplete_interval_syntax",
+];
+
 export const tokens = [
-  ...symbols.map((name) => `${name}_escaped`),
-  "count_encoded",
-  "count_escaped",
-  "interval_comma_encoded",
   "error_sentinel",
-  "opaque_end",
+  ...symbols.flatMap((name) => [name, `${name}_encoded`, `${name}_escaped`]),
+  ...quotedSymbols.flatMap((name) => [name, `${name}_encoded`]),
   "blank",
+  "separator",
+  "command_end",
+  "missing_separator",
+  "end_of_input",
+  "boundary",
   "block_close",
+  "nul_command",
+  "comment",
+  "directive",
+  "comment_tail",
   "comment_end",
+  "opaque_end",
+  "number",
   "zero_number",
   "pending_zero",
   "invalid_zero",
   "address_gap",
   "first_address_gap",
+  "address_modifier",
   "regex_start",
   "invalid_address_prefix",
   "pattern_start",
+  "translation_start",
+  "invalid_delimiter",
   "regex_end",
   "pattern_end",
   "replacement_end",
-  "translation_start",
   "translation_middle",
   "translation_end",
-  "regex_character",
-  "regex_escape",
-  "regex_character_escape",
-  "regex_dot",
-  "regex_anchor",
-  "regex_boundary",
-  "regex_class_escape",
-  "regex_backreference",
-  "group_open",
-  "group_open_encoded",
-  "group_close",
-  "group_close_encoded",
-  "alternation",
-  "alternation_encoded",
-  "quantifier",
-  "quantifier_encoded",
-  "interval_open",
-  "interval_open_encoded",
-  "interval_close",
-  "interval_close_encoded",
-  "count",
-  "interval_comma",
-  "invalid_interval_character",
-  "invalid_interval_character_encoded",
-  "invalid_interval_syntax",
-  "invalid_interval_syntax_encoded",
-  "incomplete_interval_syntax",
-  "incomplete_interval_syntax_encoded",
-  "bracket_open",
-  "bracket_open_encoded",
-  "bracket_close",
-  "bracket_close_encoded",
-  "bracket_negation",
-  "bracket_negation_encoded",
-  "bracket_character",
-  "bracket_escape",
-  "bracket_character_escape",
-  "range_dash",
-  "range_dash_encoded",
-  "class_open",
-  "collating_open",
-  "equivalence_open",
-  "term_close",
-  "term_close_encoded",
-  "term_open_marker",
-  "term_open_marker_encoded",
-  "term_close_marker",
-  "term_close_marker_encoded",
-  "class_open_encoded",
-  "misplaced_class_start",
-  "misplaced_class_start_encoded",
-  "collating_open_encoded",
-  "equivalence_open_encoded",
-  "term_nonempty",
-  "class_valid",
-  "class_invalid",
-  "class_incomplete",
-  "term_text",
-  "term_escape",
-  "literal",
-  "escape",
-  "character_escape",
-  "backreference",
-  "match_reference",
-  "case_conversion",
-  "text_start",
-  "text_end",
-  "line_continuation",
-  "filename",
-  "label",
-  "shell_start",
-  "inline_shell_start",
-  "comment",
-  "directive",
-  "command_end",
-  "end_of_input",
-  "boundary",
-  "invalid_delimiter",
   "unterminated_regex_eof",
   "unterminated_regex_line",
   "unterminated_operand_eof",
   "unterminated_operand_line",
+  "regex_character",
+  "regex_escape",
+  "regex_character_escape",
+  "bracket_character",
+  "bracket_escape",
+  "bracket_character_escape",
+  "utf8_start",
+  "utf8_continuation",
+  "incomplete_regex_operator_encoded",
+  "incomplete_group_close_encoded",
+  "interval_nonempty",
+  "interval_empty",
+  "interval_empty_eof",
+  "incomplete_interval_character_encoded",
+  "incomplete_interval_character_escaped",
+  "term_nonempty",
+  "class_valid",
+  "class_invalid",
+  "class_incomplete",
+  "literal",
+  "escape",
+  "character_escape",
+  "line_continuation",
+  "backreference",
+  "match_reference",
+  "case_conversion",
+  "text_start",
+  "inline_text_start",
+  "shell_start",
+  "inline_shell_start",
+  "text_end",
+  "filename",
+  "label",
+  "version",
+  "empty_label",
+  "empty_filename",
   "incomplete_escape",
   "invalid_escape",
   "invalid_control_escape",
   "incomplete_control_escape",
   "invalid_encoding",
-  "nul_command",
-  "empty_label",
-  "empty_filename",
-  "invalid_regex_operator",
-  "invalid_regex_operator_encoded",
-  "unmatched_group_close",
-  "unmatched_group_close_encoded",
-  "orphan_interval_open",
-  "orphan_interval_open_encoded",
-  "invalid_range_operator",
-  "invalid_range_operator_encoded",
-  "missing_separator",
-  "number",
-  "version",
   "global_flag",
   "print_flag",
   "evaluate_flag",
@@ -165,32 +126,38 @@ export const tokens = [
   "occurrence",
   "zero_occurrence",
   "unknown_flag",
-  "address_modifier",
-  "interval_nonempty",
-  "interval_empty",
-  "interval_empty_eof",
-  "inline_text_start",
-  "comment_tail",
-  "separator",
-  "regex_dot_encoded",
-  "regex_anchor_encoded",
-  "regex_boundary_encoded",
-  "regex_class_escape_encoded",
-  "regex_backreference_encoded",
-  "utf8_start",
-  "utf8_continuation",
 ];
 
-const definitions = [
+const GLOBAL_FLAG = 1;
+const PRINT_FLAG = 2;
+const OCCURRENCE_FLAG = 4;
+
+const countedFlags = [
+  { token: "global_flag", type: "flag", bit: GLOBAL_FLAG },
+  { token: "print_flag", type: "flag", bit: PRINT_FLAG },
+  { token: "occurrence", type: "number", bit: OCCURRENCE_FLAG },
+];
+
+const issue = ($, id, outcome = "invalid") =>
+  field("issue", alias($[`_${outcome}_${id}_issue`], $.syntax_issue));
+const invalidOrIncomplete = ($, id) =>
+  choice(issue($, id), issue($, id, "incomplete"));
+const leaf = ($, token, name) => alias($[`_${token}`], $[name]);
+const quotedSymbol = ($, name, type) =>
+  choice(leaf($, name, type), leaf($, `${name}_encoded`, "character_escape"));
+const symbol = ($, name, type) =>
+  choice(quotedSymbol($, name, type), leaf($, `${name}_escaped`, "escape"));
+
+const issueDefinitions = [
   [
     "invalid_interval_syntax",
     "invalid",
-    ($) => symbol($, "invalid_interval_syntax", "escape"),
+    ($) => quotedSymbol($, "invalid_interval_syntax", "escape"),
   ],
   [
     "invalid_interval_syntax",
     "incomplete",
-    ($) => symbol($, "incomplete_interval_syntax", "escape"),
+    ($) => quotedSymbol($, "incomplete_interval_syntax", "escape"),
   ],
   [
     "empty_filename",
@@ -213,34 +180,52 @@ const definitions = [
     ($) => field("count", leaf($, "number", "number")),
   ],
   ["empty_label", "invalid", ($) => leaf($, "empty_label", "label_text")],
-  ["first_address_gap", "invalid", ($) => $._first_address_gap],
+  [
+    "first_address_gap",
+    "invalid",
+    ($) => $._first_address_gap,
+    "missing_address",
+  ],
   ["invalid_zero_address", "invalid", ($) => leaf($, "invalid_zero", "number")],
   [
     "misplaced_zero_address",
     "invalid",
     ($) => leaf($, "zero_number", "number"),
+    "invalid_zero_address",
   ],
   [
     "invalid_zero_address",
     "incomplete",
     ($) => leaf($, "pending_zero", "number"),
   ],
-  ["excess_range", "invalid", ($) => $._address_tail],
-  ["forbidden_address", "invalid", ($) => field("address", $.address_clause)],
+  ["excess_range", "invalid", ($) => $._address_tail, "excess_address"],
+  [
+    "forbidden_address",
+    "invalid",
+    ($) => field("address", $.address_clause),
+    "excess_address",
+  ],
   ["unknown_substitution_flag", "invalid", ($) => $._unknown_flag],
-  ...["global_flag", "print_flag", "occurrence"].map((token) => [
+  ...countedFlags.map(({ token, type }) => [
     `duplicate_${token}`,
     "invalid",
-    ($) => leaf($, token, token === "occurrence" ? "number" : "flag"),
+    ($) => leaf($, token, type),
+    "duplicate_substitution_flag",
   ]),
   ["zero_occurrence", "invalid", ($) => leaf($, "zero_occurrence", "number")],
   ["zero_occurrence", "incomplete", ($) => leaf($, "pending_zero", "number")],
-  ["duplicate_zero_occurrence", "invalid", ($) => zero($)],
+  [
+    "duplicate_zero_occurrence",
+    "invalid",
+    ($) => invalidOrIncomplete($, "zero_occurrence"),
+    "duplicate_substitution_flag",
+  ],
   ["modifier_on_empty_regexp", "invalid", ($) => leaf($, "match_flag", "flag")],
   [
     "address_modifier_on_empty_regexp",
     "invalid",
     ($) => leaf($, "address_modifier", "address_modifier"),
+    "modifier_on_empty_regexp",
   ],
   [
     "unknown_character_class",
@@ -252,8 +237,18 @@ const definitions = [
     "incomplete",
     ($) => seq($._class_incomplete, alias($._class_payload, $.class_name)),
   ],
-  ["empty_interval", "invalid", ($) => $._interval_empty],
-  ["empty_interval", "incomplete", ($) => $._interval_empty_eof],
+  [
+    "empty_interval",
+    "invalid",
+    ($) => $._interval_empty,
+    "missing_interval_count",
+  ],
+  [
+    "empty_interval",
+    "incomplete",
+    ($) => $._interval_empty_eof,
+    "missing_interval_count",
+  ],
   ["unmatched_closing_brace", "invalid", () => "}"],
   ["duplicate_negation", "invalid", () => "!"],
   [
@@ -270,9 +265,23 @@ const definitions = [
       prec.right(repeat1(symbol($, "invalid_interval_character", "literal"))),
   ],
   [
+    "invalid_interval_character",
+    "incomplete",
+    ($) =>
+      choice(
+        leaf($, "incomplete_interval_character_encoded", "character_escape"),
+        leaf($, "incomplete_interval_character_escaped", "escape"),
+      ),
+  ],
+  [
     "invalid_regex_operator",
     "invalid",
     ($) => symbol($, "invalid_regex_operator", "regex_operator"),
+  ],
+  [
+    "invalid_regex_operator",
+    "incomplete",
+    ($) => leaf($, "incomplete_regex_operator_encoded", "character_escape"),
   ],
   [
     "unmatched_group_close",
@@ -280,9 +289,15 @@ const definitions = [
     ($) => symbol($, "unmatched_group_close", "group_close"),
   ],
   [
+    "unmatched_group_close",
+    "incomplete",
+    ($) => leaf($, "incomplete_group_close_encoded", "character_escape"),
+  ],
+  [
     "orphan_interval",
     "invalid",
     ($) => symbol($, "orphan_interval_open", "interval_open"),
+    "invalid_regex_operator",
   ],
   ["invalid_encoding", "invalid", ($) => $._invalid_encoding],
   [
@@ -304,6 +319,11 @@ const definitions = [
     "invalid_range_operator",
     "invalid",
     ($) => symbol($, "invalid_range_operator", "range_operator"),
+  ],
+  [
+    "invalid_range_operator",
+    "incomplete",
+    ($) => symbol($, "incomplete_range_operator", "range_operator"),
   ],
   ["missing_escape_character", "incomplete", ($) => $._incomplete_escape],
   ["missing_escape_character", "invalid", ($) => $._invalid_escape],
@@ -333,36 +353,16 @@ const definitions = [
 
 function defineIssueRules(definitions) {
   const rules = {};
-  for (const { id, outcome, reason, rule } of definitions) {
-    rules[`_${id}_reason`] = rule;
-    rules[`_${id}_outcome`] = ($) => alias($[`_${id}_reason`], $[reason]);
-    rules[`_${id}_issue`] = ($) => alias($[`_${id}_outcome`], $[outcome]);
+  for (const [id, outcome, rule, reason = id] of definitions) {
+    const name = `_${outcome}_${id}`;
+    rules[`${name}_reason`] = rule;
+    rules[`${name}_outcome`] = ($) => alias($[`${name}_reason`], $[reason]);
+    rules[`${name}_issue`] = ($) =>
+      alias($[`${name}_outcome`], $[`${outcome}_syntax`]);
   }
   return rules;
 }
 
-const problem = ($, reason, outcome = "invalid") =>
-  field("issue", alias($[`_${outcome}_${reason}_issue`], $.syntax_issue));
-const missing = ($, reason) =>
-  choice(problem($, reason), problem($, reason, "incomplete"));
-const leaf = ($, token, name) => alias($[`_${token}`], $[name]);
-const symbol = ($, name, type) =>
-  choice(
-    leaf($, name, type),
-    leaf($, `${name}_encoded`, "character_escape"),
-    leaf($, `${name}_escaped`, "escape"),
-  );
-const compoundClose = ($, type) =>
-  choice(
-    seq(
-      symbol($, "term_close_marker", "compound_marker"),
-      choice(
-        symbol($, "term_close", type),
-        missing($, "missing_closing_delimiter"),
-      ),
-    ),
-    missing($, "missing_closing_delimiter"),
-  );
 const verb = ($, ...spellings) =>
   field(
     "name",
@@ -371,83 +371,122 @@ const verb = ($, ...spellings) =>
       $.command_name,
     ),
   );
-const excess = ($) => repeat(problem($, "excess_range"));
-const zeroStep = ($) =>
+const commandItems = ($) => [
+  $.command,
+  $.command_separator,
+  $._command_layout,
+  $.comment,
+  issue($, "invalid_encoding"),
+];
+const addressOrNegation = ($, address) =>
+  choice(
+    seq(address, optional(field("negation", $.negation))),
+    field("negation", $.negation),
+  );
+const excess = ($) => repeat(issue($, "excess_range"));
+const step = ($, number) =>
   optional(
-    seq(
-      alias("~", $.address_operator),
-      optional(field("step", leaf($, "zero_number", "number"))),
-    ),
+    seq(alias("~", $.address_operator), optional(field("step", number))),
   );
-const rootItem = ($) =>
+const relative = ($, count) =>
+  prec.right(seq(alias(choice("+", "~"), $.address_operator), optional(count)));
+const closingDelimiter = ($, token, reason) =>
   choice(
-    $.command,
-    $.command_separator,
-    $._command_layout,
-    $.comment,
-    problem($, "invalid_encoding"),
-    problem($, "unmatched_closing_brace"),
-  );
-const zero = ($) =>
-  choice(
-    problem($, "zero_occurrence"),
-    problem($, "zero_occurrence", "incomplete"),
+    leaf($, token, "delimiter"),
+    issue($, reason),
+    issue($, reason, "incomplete"),
   );
 const close = ($, name, type) =>
-  choice(symbol($, name, type), missing($, "missing_closing_delimiter"));
-const operandEnd = ($, token) =>
   choice(
-    leaf($, token, "delimiter"),
-    problem($, "unterminated_operand"),
-    problem($, "unterminated_operand", "incomplete"),
+    symbol($, name, type),
+    invalidOrIncomplete($, "missing_closing_delimiter"),
   );
-const regexEnd = ($, token) =>
+const compoundClose = ($, type) =>
   choice(
-    leaf($, token, "delimiter"),
-    problem($, "unterminated_regex"),
-    problem($, "unterminated_regex", "incomplete"),
+    seq(
+      symbol($, "term_close_marker", "compound_marker"),
+      close($, "term_close", type),
+    ),
+    invalidOrIncomplete($, "missing_closing_delimiter"),
   );
+const fileOperand = ($) =>
+  choice($.filename, invalidOrIncomplete($, "missing_operand"));
+const opaqueText = ($, token, name) =>
+  choice(leaf($, token, name), issue($, "invalid_encoding"));
+const escapeIssues = ($) => [
+  invalidOrIncomplete($, "invalid_control_escape"),
+  invalidOrIncomplete($, "missing_escape_character"),
+  issue($, "invalid_encoding"),
+];
+const characterForms = ($, prefix) => [
+  leaf($, `${prefix}_character`, "literal"),
+  leaf($, `${prefix}_escape`, "escape"),
+  leaf($, `${prefix}_character_escape`, "character_escape"),
+  seq(
+    leaf($, "utf8_start", "character_escape"),
+    repeat(leaf($, "utf8_continuation", "character_escape")),
+  ),
+];
+const termPayload = ($, name) =>
+  repeat1(choice(symbol($, "term_text", name), ...escapeIssues($)));
+const elementTerm = ($, opening, closing) =>
+  seq(
+    symbol($, opening, opening),
+    symbol($, "term_open_marker", "compound_marker"),
+    field(
+      "element",
+      choice(
+        seq($._term_nonempty, $.collating_element),
+        invalidOrIncomplete($, "missing_bracket_element"),
+      ),
+    ),
+    compoundClose($, closing),
+  );
+const substitutionTail = ($, flags) => [
+  field("separator", closingDelimiter($, "pattern_end", "unterminated_regex")),
+  optional($.replacement),
+  field(
+    "closing",
+    closingDelimiter($, "replacement_end", "unterminated_operand"),
+  ),
+  optional(alias(flags, $.substitution_flags)),
+];
 
 function flagRules() {
   const rules = {};
-  for (const empty of [false, true]) {
+  for (const empty of [0, 1]) {
     for (let seen = 0; seen < 8; seen++) {
-      rules[`_flags_${Number(empty)}_${seen}`] = ($) => {
-        const transitions = [
-          { kind: "global_flag", bit: 1 },
-          { kind: "print_flag", bit: 2 },
-          { kind: "occurrence", bit: 4 },
-        ].map(({ kind, bit }) =>
-          seq(
-            seen & bit
-              ? problem($, `duplicate_${kind}`)
-              : alias($[`_${kind}`], kind === "occurrence" ? $.number : $.flag),
-            optional($[`_flags_${Number(empty)}_${seen | bit}`]),
-          ),
-        );
+      rules[`_flags_${empty}_${seen}`] = ($) => {
+        const then = (next) => optional($[`_flags_${empty}_${next}`]);
         return prec.right(
           choice(
-            ...transitions,
-            seq(
-              leaf($, "evaluate_flag", "flag"),
-              optional($[`_flags_${Number(empty)}_${seen & ~2}`]),
+            ...countedFlags.map(({ token, type, bit }) =>
+              seq(
+                seen & bit
+                  ? issue($, `duplicate_${token}`)
+                  : leaf($, token, type),
+                then(seen | bit),
+              ),
             ),
+            seq(leaf($, "evaluate_flag", "flag"), then(seen & ~PRINT_FLAG)),
             seq(
               empty
-                ? problem($, "modifier_on_empty_regexp")
+                ? issue($, "modifier_on_empty_regexp")
                 : leaf($, "match_flag", "flag"),
-              optional($[`_flags_${Number(empty)}_${seen}`]),
+              then(seen),
             ),
             seq(
-              seen & 4 ? problem($, "duplicate_zero_occurrence") : zero($),
-              optional($[`_flags_${Number(empty)}_${seen | 4}`]),
+              seen & OCCURRENCE_FLAG
+                ? issue($, "duplicate_zero_occurrence")
+                : invalidOrIncomplete($, "zero_occurrence"),
+              then(seen | OCCURRENCE_FLAG),
             ),
             seq(
               choice(
-                problem($, "unknown_substitution_flag"),
-                problem($, "invalid_encoding"),
+                issue($, "unknown_substitution_flag"),
+                issue($, "invalid_encoding"),
               ),
-              optional($[`_flags_${Number(empty)}_${seen}`]),
+              then(seen),
             ),
             $.write_flag,
           ),
@@ -473,18 +512,14 @@ export default function defineGrammar(name) {
 
     rules: {
       script: ($) => optional(alias($._root_commands, $.command_list)),
-      _root_commands: ($) =>
-        choice(seq($.directive, repeat(rootItem($))), repeat1(rootItem($))),
-      command_list: ($) =>
-        repeat1(
-          choice(
-            $.command,
-            $.command_separator,
-            $._command_layout,
-            $.comment,
-            problem($, "invalid_encoding"),
-          ),
-        ),
+      _root_commands: ($) => {
+        const item = choice(
+          ...commandItems($),
+          issue($, "unmatched_closing_brace"),
+        );
+        return choice(seq($.directive, repeat(item)), repeat1(item));
+      },
+      command_list: ($) => repeat1(choice(...commandItems($))),
       command_separator: ($) => $._separator,
       _command_layout: () => token(prec(1, choice("\r", "\v", "\f"))),
       command: ($) =>
@@ -506,22 +541,13 @@ export default function defineGrammar(name) {
             $._command_ending,
           ),
           seq(
-            optional(problem($, "forbidden_address")),
+            optional(issue($, "forbidden_address")),
             optional(field("negation", $.negation)),
             $.label_command,
           ),
           prec.dynamic(
             1,
-            seq(
-              choice(
-                seq(
-                  problem($, "forbidden_address"),
-                  optional(field("negation", $.negation)),
-                ),
-                field("negation", $.negation),
-              ),
-              $.comment,
-            ),
+            seq(addressOrNegation($, issue($, "forbidden_address")), $.comment),
           ),
           seq(
             field("address", alias($._read_zero_clause, $.address_clause)),
@@ -529,26 +555,20 @@ export default function defineGrammar(name) {
             $._command_ending,
           ),
           seq(
+            addressOrNegation($, field("address", $.address_clause)),
             choice(
-              seq(
-                field("address", $.address_clause),
-                optional(field("negation", $.negation)),
-              ),
-              field("negation", $.negation),
-            ),
-            choice(
-              missing($, "missing_command"),
-              problem($, "invalid_encoding"),
+              invalidOrIncomplete($, "missing_command"),
+              issue($, "invalid_encoding"),
             ),
             $._command_ending,
           ),
         ),
       _command_ending: ($) =>
-        choice($._command_end, problem($, "missing_command_separator")),
+        choice($._command_end, issue($, "missing_command_separator")),
       address_clause: ($) =>
         choice(
           seq($._first_address, optional(seq($._address_tail, excess($)))),
-          seq(problem($, "first_address_gap"), $._address_tail, excess($)),
+          seq(issue($, "first_address_gap"), $._address_tail, excess($)),
           seq(
             alias($._zero_address, $.address),
             alias(",", $.address_separator),
@@ -565,78 +585,64 @@ export default function defineGrammar(name) {
             ),
             excess($),
           ),
-          seq(
-            problem($, "first_address_gap"),
-            repeat1(problem($, "excess_range")),
-          ),
+          seq(issue($, "first_address_gap"), repeat1(issue($, "excess_range"))),
         ),
       _first_address: ($) =>
         choice($.address, alias($._first_relative_address, $.relative_address)),
       _first_relative_address: ($) =>
-        prec.right(
-          seq(
-            alias(choice("+", "~"), $.address_operator),
-            optional(
-              choice(
-                field("count", leaf($, "zero_number", "number")),
-                problem($, "invalid_relative_address"),
-              ),
-            ),
+        relative(
+          $,
+          choice(
+            field("count", leaf($, "zero_number", "number")),
+            issue($, "invalid_relative_address"),
           ),
         ),
       _read_zero_clause: ($) => alias($._zero_address, $.address),
       _misplaced_zero_address: ($) =>
         alias($._misplaced_zero_line_address, $.line_address),
       _misplaced_zero_line_address: ($) =>
-        seq(problem($, "misplaced_zero_address"), zeroStep($)),
+        seq(
+          issue($, "misplaced_zero_address"),
+          step($, leaf($, "zero_number", "number")),
+        ),
       _address_tail: ($) =>
         seq(
           alias(",", $.address_separator),
-          choice($.address, $.relative_address, missing($, "missing_address")),
+          choice(
+            $.address,
+            $.relative_address,
+            invalidOrIncomplete($, "missing_address"),
+          ),
         ),
       address: ($) =>
         choice($.line_address, $.last_line_address, $.regex_address),
       _regex_only_address: ($) => $.regex_address,
       _zero_address: ($) => alias($._zero_line_address, $.line_address),
       _zero_line_address: ($) =>
-        seq(field("first", leaf($, "zero_number", "number")), zeroStep($)),
+        seq(
+          field("first", leaf($, "zero_number", "number")),
+          step($, leaf($, "zero_number", "number")),
+        ),
       line_address: ($) =>
         choice(
+          seq(field("first", leaf($, "number", "number")), step($, $.number)),
           seq(
-            field("first", leaf($, "number", "number")),
-            optional(
-              seq(
-                alias("~", $.address_operator),
-                optional(field("step", $.number)),
-              ),
-            ),
-          ),
-          seq(
-            choice(
-              problem($, "invalid_zero_address"),
-              problem($, "invalid_zero_address", "incomplete"),
-            ),
-            zeroStep($),
+            invalidOrIncomplete($, "invalid_zero_address"),
+            step($, leaf($, "zero_number", "number")),
           ),
         ),
       last_line_address: () => "$",
-      relative_address: ($) =>
-        prec.right(
-          seq(
-            alias(choice("+", "~"), $.address_operator),
-            optional(field("count", $.number)),
-          ),
-        ),
+      relative_address: ($) => relative($, field("count", $.number)),
       number: ($) => choice($._number, $._zero_number),
-      negation: ($) => seq("!", repeat(problem($, "duplicate_negation"))),
+      negation: ($) => seq("!", repeat(issue($, "duplicate_negation"))),
       regex_address: ($) =>
         choice(
           seq(
             field("opening", leaf($, "invalid_address_prefix", "delimiter")),
             choice(
-              problem($, "invalid_delimiter"),
-              problem($, "invalid_encoding"),
-              missing($, "missing_opening_delimiter"),
+              issue($, "invalid_delimiter"),
+              issue($, "invalid_encoding"),
+              invalidOrIncomplete($, "missing_opening_delimiter"),
             ),
           ),
           seq(
@@ -644,12 +650,18 @@ export default function defineGrammar(name) {
             choice(
               seq(
                 $.regular_expression,
-                field("closing", regexEnd($, "regex_end")),
+                field(
+                  "closing",
+                  closingDelimiter($, "regex_end", "unterminated_regex"),
+                ),
                 repeat($.address_modifier),
               ),
               seq(
-                field("closing", regexEnd($, "regex_end")),
-                repeat(problem($, "address_modifier_on_empty_regexp")),
+                field(
+                  "closing",
+                  closingDelimiter($, "regex_end", "unterminated_regex"),
+                ),
+                repeat(issue($, "address_modifier_on_empty_regexp")),
               ),
             ),
           ),
@@ -669,7 +681,7 @@ export default function defineGrammar(name) {
               $.file_command,
               $.execute_command,
               $.numeric_command,
-              problem($, "unknown_command"),
+              issue($, "unknown_command"),
             ),
             $._command_ending,
           ),
@@ -699,15 +711,7 @@ export default function defineGrammar(name) {
       version_command: ($) =>
         prec.right(seq(verb($, "v"), optional(field("version", $.version)))),
       version: ($) =>
-        seq(
-          repeat1(
-            choice(
-              leaf($, "version", "version_text"),
-              problem($, "invalid_encoding"),
-            ),
-          ),
-          $._opaque_end,
-        ),
+        seq(repeat1(opaqueText($, "version", "version_text")), $._opaque_end),
       block: ($) =>
         seq(
           field("opening", "{"),
@@ -716,13 +720,7 @@ export default function defineGrammar(name) {
             prec.dynamic(
               2,
               seq(
-                choice(
-                  seq(
-                    problem($, "forbidden_address"),
-                    optional(field("negation", $.negation)),
-                  ),
-                  field("negation", $.negation),
-                ),
+                addressOrNegation($, issue($, "forbidden_address")),
                 field("closing", alias($._block_close, "}")),
               ),
             ),
@@ -730,7 +728,7 @@ export default function defineGrammar(name) {
               "closing",
               choice(
                 alias($._block_close, "}"),
-                problem($, "missing_closing_delimiter", "incomplete"),
+                issue($, "missing_closing_delimiter", "incomplete"),
               ),
             ),
           ),
@@ -746,58 +744,33 @@ export default function defineGrammar(name) {
             "label",
             choice(
               alias($._required_label, $.label),
-              missing($, "missing_operand"),
+              invalidOrIncomplete($, "missing_operand"),
             ),
           ),
         ),
       file_command: ($) =>
-        seq(
-          verb($, "r", "R", "w", "W"),
-          field("file", choice($.filename, missing($, "missing_operand"))),
-        ),
-      _read_command: ($) =>
-        seq(
-          verb($, "r"),
-          field("file", choice($.filename, missing($, "missing_operand"))),
-        ),
+        seq(verb($, "r", "R", "w", "W"), field("file", fileOperand($))),
+      _read_command: ($) => seq(verb($, "r"), field("file", fileOperand($))),
       label: ($) =>
-        seq(
-          repeat1(
-            choice(
-              leaf($, "label", "label_text"),
-              problem($, "invalid_encoding"),
-            ),
-          ),
-          $._opaque_end,
-        ),
+        seq(repeat1(opaqueText($, "label", "label_text")), $._opaque_end),
       _required_label: ($) =>
         seq(
           choice(
             leaf($, "label", "label_text"),
-            problem($, "empty_label"),
-            problem($, "invalid_encoding"),
+            issue($, "empty_label"),
+            issue($, "invalid_encoding"),
           ),
-          repeat(
-            choice(
-              leaf($, "label", "label_text"),
-              problem($, "invalid_encoding"),
-            ),
-          ),
+          repeat(opaqueText($, "label", "label_text")),
           $._opaque_end,
         ),
       filename: ($) =>
         seq(
           choice(
             leaf($, "filename", "filename_text"),
-            problem($, "empty_filename"),
-            problem($, "invalid_encoding"),
+            issue($, "empty_filename"),
+            issue($, "invalid_encoding"),
           ),
-          repeat(
-            choice(
-              leaf($, "filename", "filename_text"),
-              problem($, "invalid_encoding"),
-            ),
-          ),
+          repeat(opaqueText($, "filename", "filename_text")),
           $._opaque_end,
         ),
       shell_command: ($) =>
@@ -828,7 +801,7 @@ export default function defineGrammar(name) {
               optional($.text),
               $._text_end,
             ),
-            missing($, "missing_operand"),
+            invalidOrIncomplete($, "missing_operand"),
           ),
         ),
       text: ($) => repeat1($._operand_piece),
@@ -839,31 +812,16 @@ export default function defineGrammar(name) {
             seq(
               field("opening", leaf($, "pattern_start", "delimiter")),
               choice(
-                seq(
-                  $.regular_expression,
-                  field("separator", regexEnd($, "pattern_end")),
-                  optional($.replacement),
-                  field("closing", operandEnd($, "replacement_end")),
-                  optional(alias($._flags_0_0, $.substitution_flags)),
-                ),
-                seq(
-                  field("separator", regexEnd($, "pattern_end")),
-                  optional($.replacement),
-                  field("closing", operandEnd($, "replacement_end")),
-                  optional(alias($._flags_1_0, $.substitution_flags)),
-                ),
+                seq($.regular_expression, ...substitutionTail($, $._flags_0_0)),
+                seq(...substitutionTail($, $._flags_1_0)),
               ),
             ),
-            missing($, "missing_opening_delimiter"),
-            problem($, "invalid_delimiter"),
-            problem($, "invalid_encoding"),
+            invalidOrIncomplete($, "missing_opening_delimiter"),
+            issue($, "invalid_delimiter"),
+            issue($, "invalid_encoding"),
           ),
         ),
-      write_flag: ($) =>
-        seq(
-          leaf($, "write_flag", "flag"),
-          choice($.filename, missing($, "missing_operand")),
-        ),
+      write_flag: ($) => seq(leaf($, "write_flag", "flag"), fileOperand($)),
       replacement: ($) =>
         repeat1(
           choice(
@@ -880,13 +838,23 @@ export default function defineGrammar(name) {
             seq(
               field("opening", leaf($, "translation_start", "delimiter")),
               optional(field("source", $.translation_string)),
-              field("separator", operandEnd($, "translation_middle")),
+              field(
+                "separator",
+                closingDelimiter(
+                  $,
+                  "translation_middle",
+                  "unterminated_operand",
+                ),
+              ),
               optional(field("destination", $.translation_string)),
-              field("closing", operandEnd($, "translation_end")),
+              field(
+                "closing",
+                closingDelimiter($, "translation_end", "unterminated_operand"),
+              ),
             ),
-            missing($, "missing_opening_delimiter"),
-            problem($, "invalid_delimiter"),
-            problem($, "invalid_encoding"),
+            invalidOrIncomplete($, "missing_opening_delimiter"),
+            issue($, "invalid_delimiter"),
+            issue($, "invalid_encoding"),
           ),
         ),
       translation_string: ($) => repeat1($._operand_piece),
@@ -897,31 +865,18 @@ export default function defineGrammar(name) {
           leaf($, "escape", "escape"),
           leaf($, "character_escape", "character_escape"),
           leaf($, "line_continuation", "line_continuation"),
-          missing($, "invalid_control_escape"),
-          problem($, "missing_escape_character", "incomplete"),
-          problem($, "missing_escape_character"),
-          problem($, "invalid_encoding"),
+          ...escapeIssues($),
         ),
       comment: ($) =>
         seq(
           leaf($, "comment", "comment_text"),
-          repeat(
-            choice(
-              leaf($, "comment_tail", "comment_text"),
-              problem($, "invalid_encoding"),
-            ),
-          ),
+          repeat(opaqueText($, "comment_tail", "comment_text")),
           $._comment_end,
         ),
       directive: ($) =>
         seq(
           leaf($, "directive", "directive_text"),
-          repeat(
-            choice(
-              leaf($, "comment_tail", "comment_text"),
-              problem($, "invalid_encoding"),
-            ),
-          ),
+          repeat(opaqueText($, "comment_tail", "comment_text")),
           $._comment_end,
         ),
       regular_expression: ($) => $.alternation,
@@ -963,78 +918,54 @@ export default function defineGrammar(name) {
           $.group,
           $.bracket_expression,
           alias($._orphan_interval, $.interval),
-          problem($, "invalid_regex_operator"),
-          problem($, "unmatched_group_close"),
-          missing($, "invalid_control_escape"),
-          problem($, "missing_escape_character", "incomplete"),
-          problem($, "missing_escape_character"),
-          problem($, "invalid_encoding"),
+          invalidOrIncomplete($, "invalid_regex_operator"),
+          invalidOrIncomplete($, "unmatched_group_close"),
+          ...escapeIssues($),
         ),
       regex_character: ($) =>
         choice(
-          missing($, "invalid_interval_syntax"),
-          leaf($, "regex_character", "literal"),
-          leaf($, "regex_escape", "escape"),
-          leaf($, "regex_character_escape", "character_escape"),
-          seq(
-            leaf($, "utf8_start", "character_escape"),
-            repeat(leaf($, "utf8_continuation", "character_escape")),
-          ),
+          invalidOrIncomplete($, "invalid_interval_syntax"),
+          ...characterForms($, "regex"),
         ),
       wildcard: ($) => symbol($, "regex_dot", "regex_operator"),
       anchor: ($) => symbol($, "regex_anchor", "regex_operator"),
-      word_boundary: ($) => symbol($, "regex_boundary", "regex_operator"),
+      word_boundary: ($) => quotedSymbol($, "regex_boundary", "regex_operator"),
       regex_character_class: ($) =>
-        symbol($, "regex_class_escape", "regex_operator"),
-      backreference: ($) => symbol($, "regex_backreference", "regex_reference"),
+        quotedSymbol($, "regex_class_escape", "regex_operator"),
+      backreference: ($) =>
+        quotedSymbol($, "regex_backreference", "regex_reference"),
       group: ($) =>
         seq(
           field("opening", symbol($, "group_open", "group_open")),
           optional($.regular_expression),
           field("closing", close($, "group_close", "group_close")),
         ),
-      interval_count: ($) =>
-        repeat1(
-          choice(
-            leaf($, "count", "number"),
-            leaf($, "count_encoded", "character_escape"),
-            leaf($, "count_escaped", "escape"),
-          ),
-        ),
+      interval_count: ($) => prec.right(repeat1(symbol($, "count", "number"))),
       interval: ($) =>
         seq(
           field("opening", symbol($, "interval_open", "interval_open")),
           $._interval_body,
         ),
       _orphan_interval: ($) =>
-        seq(problem($, "orphan_interval"), $._interval_body),
+        seq(issue($, "orphan_interval"), $._interval_body),
       _interval_issue: ($) =>
         choice(
-          problem($, "invalid_interval_character"),
-          missing($, "invalid_control_escape"),
-          missing($, "missing_escape_character"),
-          problem($, "invalid_encoding"),
+          invalidOrIncomplete($, "invalid_interval_character"),
+          ...escapeIssues($),
         ),
       _interval_body: ($) =>
         seq(
           choice(
             $._interval_nonempty,
-            problem($, "empty_interval"),
-            problem($, "empty_interval", "incomplete"),
+            issue($, "empty_interval"),
+            issue($, "empty_interval", "incomplete"),
           ),
-          repeat($._interval_issue),
-          optional(
-            seq(field("minimum", $.interval_count), repeat($._interval_issue)),
-          ),
+          repeat(choice(field("minimum", $.interval_count), $._interval_issue)),
           optional(
             seq(
               symbol($, "interval_comma", "interval_separator"),
-              repeat($._interval_issue),
-              optional(
-                seq(
-                  field("maximum", $.interval_count),
-                  repeat($._interval_issue),
-                ),
+              repeat(
+                choice(field("maximum", $.interval_count), $._interval_issue),
               ),
             ),
           ),
@@ -1046,8 +977,8 @@ export default function defineGrammar(name) {
           optional(symbol($, "bracket_negation", "regex_operator")),
           choice(
             repeat1(choice($.range, $._bracket_atom)),
-            problem($, "misplaced_character_class"),
-            missing($, "missing_bracket_element"),
+            issue($, "misplaced_character_class"),
+            invalidOrIncomplete($, "missing_bracket_element"),
           ),
           field("closing", close($, "bracket_close", "bracket_close")),
         ),
@@ -1057,20 +988,9 @@ export default function defineGrammar(name) {
           $.character_class,
           $.collating_symbol,
           $.equivalence_class,
-          missing($, "invalid_control_escape"),
-          missing($, "missing_escape_character"),
-          problem($, "invalid_encoding"),
+          ...escapeIssues($),
         ),
-      bracket_character: ($) =>
-        choice(
-          leaf($, "bracket_character", "literal"),
-          leaf($, "bracket_escape", "escape"),
-          leaf($, "bracket_character_escape", "character_escape"),
-          seq(
-            leaf($, "utf8_start", "character_escape"),
-            repeat(leaf($, "utf8_continuation", "character_escape")),
-          ),
-        ),
+      bracket_character: ($) => choice(...characterForms($, "bracket")),
       range: ($) =>
         prec.right(
           1,
@@ -1079,16 +999,22 @@ export default function defineGrammar(name) {
             symbol($, "range_dash", "range_operator"),
             field(
               "end",
-              choice($._range_endpoint, missing($, "missing_bracket_element")),
+              choice(
+                $._range_endpoint,
+                invalidOrIncomplete($, "missing_bracket_element"),
+              ),
             ),
             repeat(
               seq(
-                problem($, "invalid_range_operator"),
+                choice(
+                  symbol($, "range_continuation", "range_operator"),
+                  invalidOrIncomplete($, "invalid_range_operator"),
+                ),
                 field(
                   "end",
                   choice(
                     $._range_endpoint,
-                    missing($, "missing_bracket_element"),
+                    invalidOrIncomplete($, "missing_bracket_element"),
                   ),
                 ),
               ),
@@ -1099,33 +1025,11 @@ export default function defineGrammar(name) {
         choice(
           $.bracket_character,
           $.collating_symbol,
-          problem($, "invalid_range_endpoint"),
-          missing($, "invalid_control_escape"),
-          missing($, "missing_escape_character"),
-          problem($, "invalid_encoding"),
+          issue($, "invalid_range_endpoint"),
+          ...escapeIssues($),
         ),
-      _class_payload: ($) =>
-        repeat1(
-          choice(
-            leaf($, "term_text", "class_name_text"),
-            leaf($, "term_text_escaped", "escape"),
-            leaf($, "term_escape", "character_escape"),
-            missing($, "invalid_control_escape"),
-            missing($, "missing_escape_character"),
-            problem($, "invalid_encoding"),
-          ),
-        ),
-      collating_element: ($) =>
-        repeat1(
-          choice(
-            leaf($, "term_text", "collating_text"),
-            leaf($, "term_text_escaped", "escape"),
-            leaf($, "term_escape", "character_escape"),
-            missing($, "invalid_control_escape"),
-            missing($, "missing_escape_character"),
-            problem($, "invalid_encoding"),
-          ),
-        ),
+      _class_payload: ($) => termPayload($, "class_name_text"),
+      collating_element: ($) => termPayload($, "collating_text"),
       character_class: ($) =>
         seq(
           symbol($, "class_open", "class_open"),
@@ -1134,71 +1038,20 @@ export default function defineGrammar(name) {
             "name",
             choice(
               seq($._class_valid, alias($._class_payload, $.class_name)),
-              problem($, "unknown_character_class"),
-              problem($, "unknown_character_class", "incomplete"),
-              missing($, "missing_bracket_element"),
+              issue($, "unknown_character_class"),
+              issue($, "unknown_character_class", "incomplete"),
+              invalidOrIncomplete($, "missing_bracket_element"),
             ),
           ),
           compoundClose($, "class_close"),
         ),
       collating_symbol: ($) =>
-        seq(
-          symbol($, "collating_open", "collating_open"),
-          symbol($, "term_open_marker", "compound_marker"),
-          field(
-            "element",
-            choice(
-              seq($._term_nonempty, $.collating_element),
-              missing($, "missing_bracket_element"),
-            ),
-          ),
-          compoundClose($, "collating_close"),
-        ),
+        elementTerm($, "collating_open", "collating_close"),
       equivalence_class: ($) =>
-        seq(
-          symbol($, "equivalence_open", "equivalence_open"),
-          symbol($, "term_open_marker", "compound_marker"),
-          field(
-            "element",
-            choice(
-              seq($._term_nonempty, $.collating_element),
-              missing($, "missing_bracket_element"),
-            ),
-          ),
-          compoundClose($, "equivalence_close"),
-        ),
+        elementTerm($, "equivalence_open", "equivalence_close"),
       _unknown_command: () => /[^ \t\n;{}abcdeFgGhHilnNpPqQrRstTvwWxyz=:]/,
       ...flagRules(),
-      ...defineIssueRules(
-        definitions.map(([reason, outcome, rule]) => ({
-          id: `${outcome}_${reason}`,
-          reason:
-            reason === "first_address_gap"
-              ? "missing_address"
-              : ["excess_range", "forbidden_address"].some(
-                    (name) => name === reason,
-                  )
-                ? "excess_address"
-                : [
-                      "duplicate_global_flag",
-                      "duplicate_print_flag",
-                      "duplicate_occurrence",
-                      "duplicate_zero_occurrence",
-                    ].some((name) => name === reason)
-                  ? "duplicate_substitution_flag"
-                  : reason === "misplaced_zero_address"
-                    ? "invalid_zero_address"
-                    : reason === "address_modifier_on_empty_regexp"
-                      ? "modifier_on_empty_regexp"
-                      : reason === "empty_interval"
-                        ? "missing_interval_count"
-                        : reason === "orphan_interval"
-                          ? "invalid_regex_operator"
-                          : reason,
-          outcome: `${outcome}_syntax`,
-          rule,
-        })),
-      ),
+      ...defineIssueRules(issueDefinitions),
     },
   });
 }

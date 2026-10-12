@@ -4,455 +4,17 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { test } from "node:test";
+import { issueSignatures } from "./support/cst.js";
 import {
-  issueSignatures,
+  applyEdits,
+  assertIncrementalContract,
+  parse,
   parseSuccessfully,
-  parseSummary,
 } from "./support/parser.js";
 
-const cases = [
-  { name: "empty script", source: "", kinds: ["script"] },
-  {
-    name: "simple commands and block",
-    source: "1,3!{p;d}\n",
-    kinds: ["block", "address_clause", "negation"],
-  },
-  {
-    name: "substitution and flags",
-    source: "s/a/b/2g\n",
-    kinds: [
-      "substitute_command",
-      "regular_expression",
-      "replacement",
-      "substitution_flags",
-    ],
-  },
-  {
-    name: "GNU addresses and modifiers",
-    source: "0,/a/Ip;1~2p;3,+2d;4,~3p\n",
-    kinds: ["regex_address", "relative_address", "address_modifier"],
-  },
-  {
-    name: "labels separated by semicolons",
-    source: ": loop ; b loop; T loop; t loop\n",
-    kinds: ["label_command", "branch_command", "label"],
-  },
-  {
-    name: "inline and continued text",
-    source: "a hello; world\n2i\\\none\\\ntwo\nc changed\n",
-    kinds: ["text_command", "text", "line_continuation"],
-  },
-  {
-    name: "filenames own semicolons",
-    source: "r file;name\nR next\nw output\nW first\n",
-    kinds: ["filename", "file_command"],
-  },
-  {
-    name: "GNU command arguments",
-    source: "q42;Q0;l80;v4.10\ne printf ok; printf done\nF;z\n",
-    kinds: [
-      "numeric_command",
-      "version_command",
-      "execute_command",
-      "shell_command",
-    ],
-  },
-  {
-    name: "translation escapes",
-    source: "y/abc/xyz/\n",
-    kinds: ["translate_command", "translation_string"],
-  },
-  {
-    name: "replacement case conversion",
-    source: "s/a/\\U&\\E\\1\\t/ep\n",
-    kinds: [
-      "case_conversion",
-      "matched_text_reference",
-      "replacement_reference",
-      "character_escape",
-    ],
-  },
-  {
-    name: "character classes and ranges",
-    source: "/[[:alpha:]a-z]/p\n",
-    kinds: ["character_class", "range", "bracket_expression"],
-  },
-  {
-    name: "numeric escapes construct syntax",
-    source: "s/\\x5e\\x5ba\\x5d/x/\n",
-    kinds: ["anchor", "bracket_expression", "character_escape"],
-  },
-  {
-    name: "delimiter inside bracket",
-    source: "s/[/]/x/\n",
-    kinds: ["bracket_expression"],
-  },
-];
+const runtimeTimeoutMs = 10_000;
 
 for (const scope of ["source.gsed", "source.gsed.ere"]) {
-  for (const { name, source, kinds } of cases) {
-    test(`${scope}: ${name}`, () => {
-      const result = parseSuccessfully(scope, source);
-      assert.deepEqual(issueSignatures(result.nodes), [], result.stdout);
-      for (const kind of kinds)
-        assert.ok(
-          result.nodes.some((node) => node.kind === kind),
-          `${kind}\n${result.stdout}`,
-        );
-    });
-  }
-
-  for (const [source, expected] of [
-    ["s/a/b/gg", ["duplicate_substitution_flag"]],
-    ["s/a/b/pp", ["duplicate_substitution_flag"]],
-    ["s/a/b/2p3", ["duplicate_substitution_flag"]],
-    ["s/a/b/2 0;p", ["duplicate_substitution_flag", "zero_occurrence"]],
-    ["s/a/b/0", ["zero_occurrence"]],
-    ["s/a/b/k", ["unknown_substitution_flag"]],
-    ["s//b/i", ["modifier_on_empty_regexp"]],
-    ["//Mp", ["modifier_on_empty_regexp"]],
-    ["s/[[:unknown:]]/b/", ["unknown_character_class"]],
-    ["!!p", ["duplicate_negation"]],
-    ["}p", ["unmatched_closing_brace"]],
-    ["s/a/b/pep", []],
-    ["s/a/b/eeII", []],
-    ["s/a/b/wfile;p\n", []],
-    ["p#x\n", []],
-    ["a\\", []],
-    ["a\np", []],
-  ]) {
-    test(`${scope}: GNU classification ${JSON.stringify(source)}`, () => {
-      const result = parseSuccessfully(scope, source);
-      assert.deepEqual(
-        issueSignatures(result.nodes).map(({ reason }) => reason),
-        expected,
-        result.stdout,
-      );
-    });
-  }
-
-  for (const [source, expected] of [
-    ["b", []],
-    ["t\n", []],
-    ["T;", []],
-    ["e", []],
-    ["e x\\\npp", []],
-    ["e x\\\\\npp", ["missing_command_separator"]],
-    ["e x\\\\\\\npp", []],
-    ["i\\\\\n\\bb", ["missing_command"]],
-    ["a x\\c\\\\\n1\np", ["missing_command"]],
-    ["b#comment", []],
-    [":#comment", ["missing_operand"]],
-    ["\\Σp", ["invalid_delimiter"]],
-    ["\\", ["missing_opening_delimiter", "missing_command"]],
-    ["\\\np", ["missing_opening_delimiter", "missing_command"]],
-    ["\rp;\vp;\fp", []],
-    ["{\rp}", []],
-    ["1\rp", ["unknown_command", "missing_command_separator"]],
-    ["1/a/p", ["unknown_command", "missing_command_separator"]],
-    ["1 2p", ["unknown_command", "missing_command_separator"]],
-    ["$!$p", ["unknown_command", "missing_command_separator"]],
-    ["!,", ["unknown_command"]],
-    ["1\\", ["unknown_command"]],
-    ["\0", ["unknown_command"]],
-    ["1S", ["unknown_command"]],
-    ["p\0", ["missing_command_separator", "unknown_command"]],
-    ["s/a/b/\r", ["unknown_substitution_flag"]],
-    ["s/\\c[/x/", []],
-    ["s[\\c[[x[", []],
-    ["s/[:alpha:]/x/", ["misplaced_character_class"]],
-    ["s/[^:alpha:]/x/", ["misplaced_character_class"]],
-    ["s/[:unknown:]/x/", ["misplaced_character_class"]],
-    ["s/[::]/x/", []],
-    ["s/[:::]/x/", []],
-    ["s/[:\\x3a:]/x/", []],
-    ["s/[[...]]/x/", ["unterminated_regex", "unterminated_operand"]],
-    ["s/[:a-b:]/x/", []],
-    ["s/[:[alpha:]/x/", ["misplaced_character_class"]],
-    ["s/[:[:alpha:]:]/x/", []],
-    ["s/[a:alpha:]/x/", []],
-    ["s/[:alpha:x]/x/", []],
-    ["0r file\n", []],
-    ["0~2p", []],
-    ["0~10r x", []],
-    ["0~100,/b/p", []],
-    ["0,/a/p", []],
-    ["0p", ["invalid_zero_address"]],
-    ["0!r file\n", ["invalid_zero_address"]],
-    ["0,1p", ["invalid_zero_address"]],
-    ["1,0p", ["invalid_zero_address"]],
-    ["0~0p", ["invalid_zero_address"]],
-    ["1,2q", ["excess_address"]],
-    [",2q", ["missing_address", "excess_address"]],
-    [",q", ["missing_address", "excess_address", "missing_address"]],
-    ["1,2,3p", ["excess_address"]],
-    ["1:label", ["excess_address"]],
-    ["1#comment", ["excess_address"]],
-    ["!#comment", []],
-    ["p\n1!#comment\n", ["excess_address"]],
-    ["p\n!#comment\n", []],
-    [",2p", ["missing_address"]],
-    ["1,p", ["missing_address"]],
-    ["1~p", []],
-    ["1,+p", []],
-    ["s a b ", []],
-    ["y ab cd ", []],
-    ["s/\0/x/", []],
-    ["s/\\xff/x/", []],
-    ["s/\\x00/x/", []],
-    ["s/[\\x5c*]/x/", []],
-    ["s/[a\\x2dz]/x/", []],
-    ["s/[[:\\x61lpha:]]/x/", []],
-    ["s/[\\x5b\\x3aalpha\\x3a\\x5d]/x/", []],
-    ["s/[[.\\x61.]]/x/", []],
-    ["s/[[::]]/x/", ["missing_bracket_element"]],
-    ["s/[[..]]/x/", ["missing_bracket_element"]],
-    ["s/[a-b-c]/x/", ["invalid_range_operator"]],
-    ["s/[[:alpha:]-z]/x/", ["invalid_range_endpoint"]],
-    ["s/[a-[=z=]]/x/", ["invalid_range_endpoint"]],
-    ["s/[a-[.z.]]/x/", []],
-    ["s/[a-\\x5d]/x/", []],
-    ["s@[a\\x5d@]@x@", []],
-    ["s2\\x2x2", []],
-    ["s2a2\\x2", []],
-    ["s/a/\\c/", []],
-    ["s/a/\\c\\\\/", []],
-    ["sca\\ccYcg", ["unterminated_operand"]],
-    ["s/\\c//x/", []],
-    ["s/\\x5c/x/", ["missing_escape_character"]],
-    ["s/\\x5b/x/", ["missing_bracket_element", "missing_closing_delimiter"]],
-  ]) {
-    test(`${scope}: boundary ${JSON.stringify(source)}`, () => {
-      const result = parseSuccessfully(scope, source);
-      assert.deepEqual(
-        issueSignatures(result.nodes).map(({ reason }) => reason),
-        expected,
-        result.stdout,
-      );
-    });
-  }
-
-  for (const [name, source, kind, expected] of [
-    [
-      "escaped UTF-8 character",
-      "s/\\xce\\xa3*/x/",
-      "regex_character",
-      [[2, 10]],
-    ],
-    [
-      "overlong escaped UTF-8 is separate bytes",
-      "s/\\xe0\\x80\\x80*/x/",
-      "regex_character",
-      [
-        [2, 6],
-        [6, 10],
-        [10, 14],
-      ],
-    ],
-    ["native UTF-8 character", "s/Σ*/x/", "regex_character", [[2, 4]]],
-    ["escaped bracket range", "s/[a\\x2dz]/x/", "range", [[3, 9]]],
-    [
-      "escaped UTF-8 bracket element",
-      "s/[\\xce\\xa3]/x/",
-      "bracket_character",
-      [[3, 11]],
-    ],
-    ["source spelling of anchor", "s/\\x5ea/x/", "character_escape", [[2, 6]]],
-    [
-      "source spelling of host delimiter escape",
-      "s.\\..x.",
-      "escape",
-      [[2, 4]],
-    ],
-    [
-      "directive preserves body whitespace",
-      "#n hi\n",
-      "comment_text",
-      [[2, 5]],
-    ],
-    [
-      "only first comment has directive role",
-      "#n hi\n#n\n",
-      "directive_text",
-      [[0, 2]],
-    ],
-    [
-      "initial BOM is input metadata",
-      "\ufeff#n\np",
-      "directive_text",
-      [[3, 5]],
-    ],
-    ["embedded BOM is text", "a x\ufeffy\n", "literal", [[2, 7]]],
-    [
-      "digitless numeric escape retains source role",
-      "s/\\x/x/",
-      "escape",
-      [[2, 4]],
-    ],
-    ["host escaped dollar anchor", "s$\\$$x$", "escape", [[2, 4]]],
-    [
-      "escaped delimiter inside an escape-opened bracket",
-      "s/\\x5b\\/]/x/",
-      "escape",
-      [[6, 8]],
-    ],
-    [
-      "escaped delimiter closes an escape-opened bracket",
-      "s]\\x5ba\\]]x]",
-      "escape",
-      [[7, 9]],
-    ],
-    [
-      "escaped delimiter as a range operator",
-      "s-\\x5ba\\-z]-x-",
-      "escape",
-      [[7, 9]],
-    ],
-    [
-      "escaped delimiters as character class markers",
-      "s:\\x5b\\x5b\\:alpha\\:\\x5d\\x5d:x:",
-      "escape",
-      [
-        [10, 12],
-        [17, 19],
-      ],
-    ],
-    ["escape letter delimiter in a regex", "sta\\ttXt", "escape", [[3, 5]]],
-    ["escaped backslash inside a bracket", "s/[\\\\n]/x/", "escape", [[3, 5]]],
-    [
-      "escaped backslash inside a bracket hides the next escape",
-      "s/[\\\\n]/x/",
-      "character_escape",
-      [],
-    ],
-    [
-      "escape letter delimiter is not a regex control character",
-      "sta\\ttXt",
-      "character_escape",
-      [],
-    ],
-    [
-      "digit delimiter is not a replacement reference",
-      "s1a1b\\11",
-      "replacement_reference",
-      [],
-    ],
-    [
-      "escaped c delimiter before an ordinary character",
-      "sca\\cAcYc",
-      "escape",
-      [[3, 5]],
-    ],
-    [
-      "case conversion letter delimiter is an escape",
-      "sUaU\\UU",
-      "case_conversion",
-      [],
-    ],
-    [
-      "raw closing bracket remains after decoded closer",
-      "s/[a-\\x5d]/x/",
-      "regex_character",
-      [[9, 10]],
-    ],
-    ["decoded trailing hyphen is literal", "s/[a-\\x5d]/x/", "range", []],
-    [
-      "control escape does not open raw bracket",
-      "s[\\c[[x[",
-      "character_escape",
-      [[2, 5]],
-    ],
-    [
-      "digitless numeric escape in a class name",
-      "s/[[:\\digit:]]/x/",
-      "escape",
-      [[5, 7]],
-    ],
-    [
-      "digitless numeric escape in a collating element",
-      "s/[[.a\\ob.]]/x/",
-      "escape",
-      [[6, 8]],
-    ],
-    ["label retains carriage return", ":x\rfoo p", "label_text", [[1, 6]]],
-    [
-      "raw text leadin backslash does not continue the line",
-      "a\\\\\np",
-      "command_name",
-      [
-        [0, 1],
-        [4, 5],
-      ],
-    ],
-    [
-      "text control escape takes its paired backslash",
-      "a x\\c\\\\\np",
-      "character_escape",
-      [[3, 7]],
-    ],
-    [
-      "backslash after the raw text leadin continues the line",
-      "a\\\\\\\np",
-      "line_continuation",
-      [[3, 5]],
-    ],
-    ["label ends before comment", ":x#hi", "comment_text", [[2, 5]]],
-    [
-      "version is not restricted to digits",
-      "v0alpha p",
-      "version_text",
-      [[1, 7]],
-    ],
-  ]) {
-    test(`${scope}: source ranges ${name}`, () => {
-      const result = parseSuccessfully(scope, source);
-      assert.deepEqual(issueSignatures(result.nodes), [], result.stdout);
-      assert.deepEqual(
-        result.nodes
-          .filter((node) => node.kind === kind)
-          .map((node) => [node.startByte, node.endByte]),
-        expected,
-        result.stdout,
-      );
-    });
-  }
-
-  for (const [prefix, suffix, owner] of [
-    ["s/a/", "/", "replacement"],
-    ["y/", "/x/", "translation_string"],
-    ["a ", "\n", "text"],
-    ["r ", "\n", "filename"],
-    ["b ", "\n", "label"],
-    ["v ", "\n", "version"],
-    ["e ", "\n", "shell_command"],
-    ["s/[[:", ":]]/x/", "class_name"],
-    ["s/[[.", ".]]/x/", "collating_element"],
-    ["#", "\n", "comment"],
-    ["s/", "/x/", "regex_branch"],
-  ]) {
-    test(`${scope}: invalid UTF-8 remains inside ${owner}`, () => {
-      const source = Buffer.concat([
-        Buffer.from(`${prefix}a`),
-        Buffer.from([255, 254]),
-        Buffer.from(`b${suffix}`),
-      ]);
-      const result = parseSuccessfully(scope, source);
-      assert.deepEqual(
-        issueSignatures(result.nodes).map(
-          ({ outcome, reason }) => `${outcome}/${reason}`,
-        ),
-        ["invalid_syntax/invalid_encoding"],
-        result.stdout,
-      );
-      const issue = result.nodes.find((node) => node.kind === "syntax_issue");
-      assert.equal(result.nodes[issue.parent].kind, owner, result.stdout);
-      assert.deepEqual(
-        [issue.startByte, issue.endByte],
-        [prefix.length + 1, prefix.length + 3],
-      );
-    });
-  }
-
   for (const [prefix, suffix, kind] of [
     ["s/[", "^]/x/", "bracket_close"],
     ["s/", "*/x/", "repetition"],
@@ -460,7 +22,7 @@ for (const scope of ["source.gsed", "source.gsed.ere"]) {
     test(`${scope}: invalid UTF-8 occupies the regex element before ${JSON.stringify(suffix)}`, () => {
       const source = Buffer.concat([
         Buffer.from(prefix),
-        Buffer.from([255]),
+        Buffer.from([0xff]),
         Buffer.from(suffix),
       ]);
       const result = parseSuccessfully(scope, source);
@@ -482,7 +44,7 @@ for (const scope of ["source.gsed", "source.gsed.ere"]) {
         scope,
         Buffer.concat([
           Buffer.from(prefix),
-          Buffer.from([255]),
+          Buffer.from([0xff]),
           Buffer.from("/x/"),
         ]),
       );
@@ -510,7 +72,7 @@ for (const scope of ["source.gsed", "source.gsed.ere"]) {
       scope,
       Buffer.concat([
         Buffer.from("s/[\\"),
-        Buffer.from([255]),
+        Buffer.from([0xff]),
         Buffer.from("]/x/"),
       ]),
     );
@@ -525,783 +87,18 @@ for (const scope of ["source.gsed", "source.gsed.ere"]) {
       result.stdout,
     );
   });
-
-  for (const [source, commands, labels, versions] of [
-    [":x p", [":", "p"], ["x"], []],
-    [":x\tp", [":", "p"], ["x"], []],
-    ["b x p", ["b", "p"], ["x"], []],
-    ["t x#hi", ["t"], ["x"], []],
-    ["T x;v0alpha p", ["T", "v", "p"], ["x"], ["0alpha"]],
-    ["v4.10p", ["v"], [], ["4.10p"]],
-    ["vfoo", ["v"], [], ["foo"]],
-    ["v4.10-rc1\tp", ["v", "p"], [], ["4.10-rc1"]],
-    ["v#comment", ["v"], [], []],
-  ]) {
-    test(`${scope}: word operand boundaries ${JSON.stringify(source)}`, () => {
-      const result = parseSuccessfully(scope, source);
-      assert.deepEqual(issueSignatures(result.nodes), [], result.stdout);
-      for (const [kind, expected] of [
-        ["command_name", commands],
-        ["label_text", labels],
-        ["version_text", versions],
-      ]) {
-        assert.deepEqual(
-          result.nodes
-            .filter((node) => node.kind === kind)
-            .map((node) => source.slice(node.startByte, node.endByte)),
-          expected,
-          result.stdout,
-        );
-      }
-    });
-  }
-
-  for (const [source, expectedRange, spelling] of [
-    ["s/[:alpha:]/x/", [3, 10], ":alpha:"],
-    ["s/[^:alpha:]/x/", [4, 11], ":alpha:"],
-    ["s/[\\x3a\\x61lpha\\x3a]/x/", [3, 19], "\\x3a\\x61lpha\\x3a"],
-  ]) {
-    test(`${scope}: misplaced class retains structure ${JSON.stringify(source)}`, () => {
-      const result = parseSuccessfully(scope, source);
-      assert.deepEqual(
-        issueSignatures(result.nodes).map(({ reason }) => reason),
-        ["misplaced_character_class"],
-      );
-      const issue = result.nodes.find((node) => node.kind === "syntax_issue");
-      assert.equal(result.nodes[issue.parent].kind, "bracket_expression");
-      assert.deepEqual([issue.startByte, issue.endByte], expectedRange);
-      assert.equal(source.slice(issue.startByte, issue.endByte), spelling);
-      assert.equal(
-        result.nodes.filter((node) => node.kind === "class_name").length,
-        1,
-      );
-      assert.equal(
-        result.nodes.filter((node) => node.kind === "bracket_close").length,
-        1,
-      );
-    });
-  }
-
-  for (const { source, expected, negation } of [
-    { source: "{p;!}", expected: [], negation: true },
-    { source: "{p;1}", expected: ["excess_address"], negation: false },
-    { source: "{p;1!}", expected: ["excess_address"], negation: true },
-    { source: "{p;1,2!}", expected: ["excess_address"], negation: true },
-    { source: "{p;!!}", expected: ["duplicate_negation"], negation: true },
-  ]) {
-    test(`${scope}: closing brace owns its address and negation ${source}`, () => {
-      const { nodes } = parseSuccessfully(scope, source);
-      assert.deepEqual(
-        issueSignatures(nodes).map(({ reason }) => reason),
-        expected,
-      );
-      const block = nodes.findIndex(({ kind }) => kind === "block");
-      const children = nodes.filter(({ parent }) => parent === block);
-      assert.equal(
-        children.some(({ kind }) => kind === "negation"),
-        negation,
-      );
-      if (source.includes("1")) {
-        const issue = children.find(({ kind }) => kind === "syntax_issue");
-        assert.equal(issue?.startByte, 3);
-        assert.equal(issue?.endByte, source.includes(",") ? 6 : 4);
-      }
-      assert.equal(nodes.filter(({ kind }) => kind === "command").length, 2);
-    });
-  }
-
-  for (const { source, expected } of [
-    { source: "1, p", expected: [["missing_address", 2, 2]] },
-    {
-      source: "1,2,  p",
-      expected: [
-        ["excess_address", 3, 4],
-        ["missing_address", 4, 4],
-      ],
-    },
-    {
-      source: "1, \t",
-      expected: [
-        ["missing_address", 2, 2],
-        ["missing_command", 2, 2],
-      ],
-    },
-    { source: ":  #comment", expected: [["missing_operand", 1, 1]] },
-    { source: "1 \t;", expected: [["missing_command", 1, 1]] },
-    { source: "{p \t", expected: [["missing_closing_delimiter", 2, 2]] },
-  ]) {
-    test(`${scope}: missing syntax excludes following layout ${JSON.stringify(source)}`, () => {
-      const { nodes } = parseSuccessfully(scope, source);
-      assert.deepEqual(
-        issueSignatures(nodes).map(({ reason, range }) => [reason, range]),
-        expected.map(([reason, start, end]) => [
-          reason,
-          `[0, ${start}] - [0, ${end}]`,
-        ]),
-      );
-    });
-  }
-
-  for (const { source, expected } of [
-    { source: ":\0", expected: ["empty_label"] },
-    { source: ": \0x p", expected: ["empty_label"] },
-    { source: ":x\0y p", expected: [] },
-    { source: "b\0x", expected: [] },
-    { source: "t\0x", expected: [] },
-    { source: "T\0x", expected: [] },
-  ]) {
-    test(`${scope}: NUL in label ${JSON.stringify(source)}`, () => {
-      const { nodes } = parseSuccessfully(scope, source);
-      assert.deepEqual(
-        issueSignatures(nodes).map(({ reason }) => reason),
-        expected,
-      );
-      if (expected.length) {
-        const issue = nodes.find(({ kind }) => kind === "syntax_issue");
-        assert.equal(issue?.startByte, source.indexOf("\0"));
-        assert.equal(issue?.endByte, source.indexOf("\0") + 1);
-        assert.equal(nodes[issue.parent].kind, "label");
-      }
-      const label = nodes.find(({ kind }) => kind === "label");
-      assert.equal(
-        source.slice(label.startByte, label.endByte),
-        source
-          .slice(source.includes(" ") && source[1] === " " ? 2 : 1)
-          .split(" ")[0],
-      );
-    });
-  }
-
-  test(`${scope}: generated backslash pairs with preserved source backslashes`, () => {
-    const source = String.raw`s/\x5c\\x5e/x/`;
-    const { nodes } = parseSuccessfully(scope, source);
-    assert.deepEqual(issueSignatures(nodes), []);
-    const characters = nodes.filter(({ kind }) => kind === "regex_character");
-    assert.deepEqual(
-      characters.map(({ startByte, endByte }) =>
-        source.slice(startByte, endByte),
-      ),
-      ["\\x5c\\", "\\x", "5", "e"],
-    );
-    assert.equal(
-      nodes.some(({ kind }) => kind === "anchor"),
-      false,
-    );
-    const brace = parseSuccessfully(scope, String.raw`s/a\x5c\{/x/`);
-    assert.deepEqual(
-      issueSignatures(brace.nodes).map(({ reason }) => reason),
-      scope === "source.gsed"
-        ? []
-        : ["missing_interval_count", "missing_closing_delimiter"],
-    );
-  });
-
-  for (const source of [String.raw`ax\c\.`, "a x\\c\\\np", "a\\\nx\\c\\."]) {
-    test(`${scope}: text control escape rejects an unpaired backslash ${JSON.stringify(source)}`, () => {
-      const { nodes } = parseSuccessfully(scope, source);
-      assert.deepEqual(
-        issueSignatures(nodes).map(({ outcome, reason }) => [outcome, reason]),
-        [["invalid_syntax", "invalid_control_escape"]],
-      );
-      const issue = nodes.find(({ kind }) => kind === "syntax_issue");
-      assert.equal(nodes[issue.parent].kind, "text");
-      assert.equal(
-        nodes.filter(({ kind }) => kind === "command_name").length,
-        1,
-      );
-    });
-  }
-
-  for (const source of [
-    String.raw`ax\c\\.`,
-    "ax\\c\\",
-    "a\\\nx\\c\\\\",
-    "a \\c\\.",
-  ]) {
-    test(`${scope}: text control escape respects host processing ${JSON.stringify(source)}`, () => {
-      assert.deepEqual(
-        issueSignatures(parseSuccessfully(scope, source).nodes),
-        [],
-      );
-    });
-  }
-
-  for (const source of ["s\0", "y\0", "\\\0p"]) {
-    test(`${scope}: NUL is an invalid delimiter ${JSON.stringify(source)}`, () => {
-      const { nodes } = parseSuccessfully(scope, source);
-      assert.deepEqual(issueSignatures(nodes), [
-        {
-          outcome: "invalid_syntax",
-          reason: "invalid_delimiter",
-          range: "[0, 1] - [0, 2]",
-        },
-      ]);
-    });
-  }
-
-  for (const source of ["r \0tail", "R\0", "w \0", "W\0", "s/a/b/w \0tail"]) {
-    test(`${scope}: leading NUL empties the filename ${JSON.stringify(source)}`, () => {
-      const { nodes } = parseSuccessfully(scope, source);
-      const start = source.indexOf("\0");
-      assert.deepEqual(issueSignatures(nodes), [
-        {
-          outcome: "invalid_syntax",
-          reason: "empty_filename",
-          range: `[0, ${start}] - [0, ${start + 1}]`,
-        },
-      ]);
-      const issue = nodes.find(({ kind }) => kind === "syntax_issue");
-      assert.equal(nodes[issue.parent].kind, "filename");
-      assert.equal(
-        nodes.find(({ kind }) => kind === "filename").endByte,
-        source.length,
-      );
-      assert.equal(
-        nodes
-          .filter(({ kind }) => kind === "filename_text")
-          .map(({ startByte, endByte }) => source.slice(startByte, endByte))
-          .join(""),
-        source.slice(start),
-      );
-    });
-  }
-
-  test(`${scope}: NUL inside a nonempty filename remains filename text`, () => {
-    assert.deepEqual(
-      issueSignatures(parseSuccessfully(scope, "r x\0tail").nodes),
-      [],
-    );
-  });
-
-  for (const source of ["!!p", "{p;!!}"]) {
-    test(`${scope}: duplicate negation belongs to negation ${source}`, () => {
-      const { nodes } = parseSuccessfully(scope, source);
-      assert.deepEqual(
-        issueSignatures(nodes).map(({ reason }) => reason),
-        ["duplicate_negation"],
-      );
-      const issue = nodes.find(({ kind }) => kind === "syntax_issue");
-      assert.equal(nodes[issue.parent].kind, "negation");
-      assert.equal(source.slice(issue.startByte, issue.endByte), "!");
-    });
-  }
-
-  for (const [contents, expected] of [
-    [String.raw`1\n`, [["character_escape", String.raw`\n`]]],
-    [String.raw`1\q`, [["escape", String.raw`\q`]]],
-    [String.raw`1\x61`, [["character_escape", String.raw`\x61`]]],
-    [
-      String.raw`1x\n`,
-      [
-        ["literal", "x"],
-        ["character_escape", String.raw`\n`],
-      ],
-    ],
-  ]) {
-    const source = scope.endsWith("ere")
-      ? `s/a{${contents}}/x/`
-      : `s/a\\{${contents}\\}/x/`;
-    test(`${scope}: invalid interval retains source classifications ${JSON.stringify(source)}`, () => {
-      const { nodes } = parseSuccessfully(scope, source);
-      const reasons = nodes.filter(
-        ({ kind }) => kind === "invalid_interval_character",
-      );
-      assert.equal(issueSignatures(nodes).length, 1);
-      assert.deepEqual(
-        reasons.flatMap((reason) => {
-          assert.equal(
-            nodes[nodes[nodes[reason.parent].parent].parent].kind,
-            "interval",
-          );
-          return nodes
-            .filter(({ parent }) => parent === nodes.indexOf(reason))
-            .map(({ kind, startByte, endByte }) => [
-              kind,
-              source.slice(startByte, endByte),
-            ]);
-        }),
-        expected,
-      );
-    });
-  }
-
-  for (const [source, expected] of [
-    ["0~0r x", []],
-    ["0~r x", []],
-    ["00 ~ 00r x", []],
-    ["0~,/a/p", []],
-    ["0~0,/a/p", []],
-    ["0~0,/a/!p", []],
-    ["0~0p", ["invalid_zero_address"]],
-    ["0~0!r x", ["invalid_zero_address"]],
-    ["0~0,1p", ["invalid_zero_address"]],
-    ["1,0~0p", ["invalid_zero_address"]],
-  ]) {
-    test(`${scope}: zero step address follows zero address restrictions ${source}`, () => {
-      assert.deepEqual(
-        issueSignatures(parseSuccessfully(scope, source).nodes).map(
-          ({ reason }) => reason,
-        ),
-        expected,
-      );
-    });
-  }
-
-  test(`${scope}: zero step remains explicit and omitted step is not synthesized`, () => {
-    const result = parseSuccessfully(scope, "0~0r x").nodes;
-    assert.deepEqual(
-      result
-        .filter(({ kind }) => kind === "number")
-        .map(({ field, startByte, endByte }) => [field, startByte, endByte]),
-      [
-        ["first", 0, 1],
-        ["step", 2, 3],
-      ],
-    );
-    assert.equal(
-      parseSuccessfully(scope, "0~r x").nodes.some(
-        ({ field }) => field === "step",
-      ),
-      false,
-    );
-  });
-
-  for (const { source, expected, counts } of [
-    { source: "+p", expected: [], counts: [] },
-    { source: "~p", expected: [], counts: [] },
-    { source: "+b", expected: [], counts: [] },
-    { source: "+ 00p", expected: [], counts: ["00"] },
-    { source: "~0p", expected: [], counts: ["0"] },
-    { source: "+3p", expected: ["invalid_relative_address"], counts: ["3"] },
-    { source: "~12p", expected: ["invalid_relative_address"], counts: ["12"] },
-    { source: "1,+p", expected: [], counts: [] },
-    { source: "1,~p", expected: [], counts: [] },
-    { source: "1,+0p", expected: [], counts: ["0"] },
-    { source: "1,~3p", expected: [], counts: ["3"] },
-    { source: "+,2p", expected: [], counts: [] },
-    { source: "+:label", expected: ["excess_address"], counts: [] },
-    { source: "{+}", expected: ["excess_address"], counts: [] },
-    { source: "+", expected: ["missing_command"], counts: [] },
-    { source: "1~p", expected: [], counts: [] },
-    { source: "1~0p", expected: [], counts: [] },
-    { source: "0~p", expected: ["invalid_zero_address"], counts: [] },
-  ]) {
-    test(`${scope}: GNU address extension ${JSON.stringify(source)}`, () => {
-      const { nodes } = parseSuccessfully(scope, source);
-      assert.deepEqual(
-        issueSignatures(nodes).map(({ reason }) => reason),
-        expected,
-      );
-      assert.deepEqual(
-        nodes
-          .filter(({ field }) => field === "count")
-          .map(({ startByte, endByte }) => source.slice(startByte, endByte)),
-        counts,
-      );
-      for (const node of nodes.filter(
-        ({ kind }) => kind === "invalid_relative_address",
-      )) {
-        assert.equal(source.slice(node.startByte, node.endByte), counts[0]);
-        assert.equal(
-          nodes[nodes[nodes[node.parent].parent].parent].kind,
-          "relative_address",
-        );
-      }
-    });
-  }
-
-  for (const { source, start, end = start + 3, owner } of [
-    { source: String.raw`s/\c\./x/`, start: 2, owner: "regex_branch" },
-    { source: String.raw`/\c\./p`, start: 1, owner: "regex_branch" },
-    { source: String.raw`s/[\c\.]/x/`, start: 3, owner: "bracket_expression" },
-    { source: String.raw`s/a/\c\./`, start: 4, owner: "replacement" },
-    { source: String.raw`y/\c\./ab/`, start: 2, owner: "translation_string" },
-    { source: String.raw`y/ab/\c\./`, start: 5, owner: "translation_string" },
-    { source: String.raw`s&a&\c\&&`, start: 4, end: 8, owner: "replacement" },
-    {
-      source: String.raw`y&a&\c\&&`,
-      start: 4,
-      end: 8,
-      owner: "translation_string",
-    },
-    { source: String.raw`sc[\c\.]cxc`, start: 3, owner: "bracket_expression" },
-    { source: String.raw`s/[[:a\c\.:]]/x/`, start: 6, owner: "class_name" },
-    {
-      source: String.raw`s/a{\c\}/x/`,
-      start: 4,
-      owner: scope.endsWith("ere") ? "interval" : "regex_branch",
-    },
-  ]) {
-    test(`${scope}: unpaired control backslash ${JSON.stringify(source)}`, () => {
-      const { nodes } = parseSuccessfully(scope, source);
-      assert.deepEqual(issueSignatures(nodes), [
-        {
-          outcome: "invalid_syntax",
-          reason: "invalid_control_escape",
-          range: `[0, ${start}] - [0, ${end}]`,
-        },
-      ]);
-      const issue = nodes.find(({ kind }) => kind === "syntax_issue");
-      assert.equal(nodes[issue.parent].kind, owner);
-      assert.equal(
-        nodes
-          .filter(({ kind }) => kind === "character_escape")
-          .some(
-            ({ startByte, endByte }) => startByte === start && endByte === end,
-          ),
-        true,
-      );
-    });
-  }
-
-  for (const source of [
-    String.raw`s/\c\\./x/`,
-    String.raw`s/[\c\\]/x/`,
-    String.raw`s/a/\c\\/`,
-    String.raw`y/\c\\/a/`,
-    String.raw`y/a/\c\\/`,
-    String.raw`sc\c\.cxc`,
-    String.raw`sc\cccxc`,
-    String.raw`\c\c\.cp`,
-    String.raw`a \c\.`,
-    String.raw`s/\x5cc\./x/`,
-    String.raw`s/\c\\\c\\/x/`,
-    "s/a/\\c\\\ny/",
-    "y/ab/x\\c\\\n/",
-    String.raw`sx\c\\\\x5dxYx`,
-    "s/\\c\\\\\\\\\n/x/",
-    "s/\\x5b\\\n]/x/",
-    "sca\\c\\\\\ncxc",
-    String.raw`s/\c\\\c\//x/`,
-    "s/\\c\\\\\\c\\\n/x/",
-  ]) {
-    test(`${scope}: control escape host processing ${JSON.stringify(source)}`, () => {
-      assert.deepEqual(
-        issueSignatures(parseSuccessfully(scope, source).nodes),
-        [],
-      );
-    });
-  }
-
-  for (const [source, expected] of [
-    [
-      String.raw`sx\c\\\\x5dxYx`,
-      [
-        ["character_escape", String.raw`\c\\`],
-        ["character_escape", String.raw`\\x5d`],
-      ],
-    ],
-    [
-      String.raw`st\c\\\\ttYt`,
-      [
-        ["character_escape", String.raw`\c\\`],
-        ["character_escape", String.raw`\\t`],
-      ],
-    ],
-    [
-      "s/\\c\\\\\\\\\n/x/",
-      [
-        ["character_escape", String.raw`\c\\`],
-        ["escape", "\\\\\n"],
-      ],
-    ],
-    [
-      "s/\\x5b\\\n]/x/",
-      [
-        ["character_escape", String.raw`\x5b`],
-        ["escape", "\\\n"],
-      ],
-    ],
-    [
-      "sca\\c\\\\\ncxc",
-      [
-        ["escape", String.raw`\c`],
-        ["escape", "\\\\\n"],
-      ],
-    ],
-    [
-      String.raw`s/\c\\\c\//x/`,
-      [
-        ["character_escape", String.raw`\c\\`],
-        ["character_escape", String.raw`\c\/`],
-      ],
-    ],
-  ]) {
-    test(`${scope}: escapes read delimiter-processed characters ${JSON.stringify(source)}`, () => {
-      const { nodes } = parseSuccessfully(scope, source);
-      const regex = nodes.find(({ kind }) => kind === "regular_expression");
-      assert.deepEqual(
-        nodes
-          .filter(
-            ({ kind, startByte, endByte }) =>
-              (kind === "escape" || kind === "character_escape") &&
-              regex.startByte <= startByte &&
-              endByte <= regex.endByte,
-          )
-          .map(({ kind, startByte, endByte }) => [
-            kind,
-            source.slice(startByte, endByte),
-          ]),
-        expected,
-      );
-    });
-  }
-
-  for (const [source, expected] of [
-    [
-      "s/\\c\\\\\n/x/",
-      [
-        {
-          outcome: "invalid_syntax",
-          reason: "invalid_control_escape",
-          range: "[0, 2] - [1, 0]",
-        },
-      ],
-    ],
-    [
-      String.raw`sx\c\\\\x5bxYx`,
-      [
-        {
-          outcome: "invalid_syntax",
-          reason: "missing_bracket_element",
-          range: "[0, 11] - [0, 11]",
-        },
-        {
-          outcome: "invalid_syntax",
-          reason: "missing_closing_delimiter",
-          range: "[0, 11] - [0, 11]",
-        },
-      ],
-    ],
-    [
-      String.raw`st\x5b\c\\\tQt`,
-      [
-        {
-          outcome: "invalid_syntax",
-          reason: "missing_closing_delimiter",
-          range: "[0, 11] - [0, 11]",
-        },
-      ],
-    ],
-  ]) {
-    test(`${scope}: host escapes after a paired control backslash ${JSON.stringify(source)}`, () => {
-      assert.deepEqual(
-        issueSignatures(parseSuccessfully(scope, source).nodes),
-        expected,
-      );
-    });
-  }
-
-  test(`${scope}: paired control escape leaves a wildcard and escaped c delimiter preserves its source`, () => {
-    const source = String.raw`s/\c\\./x/`;
-    const result = parseSuccessfully(scope, source);
-    const wildcard = result.nodes.find(({ kind }) => kind === "wildcard");
-    assert.deepEqual([wildcard.startByte, wildcard.endByte], [6, 7]);
-    const escaped = parseSuccessfully(scope, String.raw`sc\c\.cxc`).nodes;
-    assert.deepEqual(
-      escaped
-        .filter(({ kind }) => kind === "escape")
-        .map(({ startByte, endByte }) => [startByte, endByte]),
-      [
-        [2, 4],
-        [4, 6],
-      ],
-    );
-    assert.equal(
-      escaped.some(({ kind }) => kind === "character_escape"),
-      false,
-    );
-  });
 }
 
-for (const [
-  scope,
-  opening,
-  closing,
-  alternate,
-  intervalOpen,
-  intervalClose,
-] of [
-  ["source.gsed", "\\(", "\\)", "\\|", "\\{", "\\}"],
-  ["source.gsed.ere", "(", ")", "|", "{", "}"],
+for (const [scope, open, close] of [
+  ["source.gsed", "\\{", "\\}"],
+  ["source.gsed.ere", "{", "}"],
 ]) {
-  for (const [name, pattern] of [
-    ["empty group", `${opening}${closing}`],
-    ["empty alternatives", `${alternate}a${alternate}${alternate}`],
-    ["group repetition", `${opening}ab${closing}**`],
-    ["interval with omitted minimum", `a${intervalOpen},2${intervalClose}`],
-    ["interval with no counts", `a${intervalOpen},${intervalClose}`],
-    ["backreference", `${opening}a${closing}\\1`],
-    ["GNU regex escapes", "\\w\\W\\s\\S\\b\\B\\<\\>"],
-    ["collating and equivalence", "[[.a.][=b=]]"],
-    ["literal bracket edges", "[]^-]"],
-    ["unknown and digitless escapes", "\\q\\x\\o\\d"],
-    ["embedded newline", "a\\\nb"],
-  ]) {
-    test(`${scope}: regex ${name}`, () => {
-      const result = parseSuccessfully(scope, `s/${pattern}/x/\n`);
-      assert.deepEqual(issueSignatures(result.nodes), [], result.stdout);
-    });
-  }
-  for (const [name, source, expected] of [
-    ["missing command at EOF", "1", ["incomplete_syntax/missing_command"]],
-    [
-      "missing command before newline",
-      "1\n",
-      ["invalid_syntax/missing_command"],
-    ],
-    ["missing label", ":", ["incomplete_syntax/missing_operand"]],
-    ["missing filename", "r\n", ["invalid_syntax/missing_operand"]],
-    [
-      "missing block close",
-      "{p",
-      ["incomplete_syntax/missing_closing_delimiter"],
-    ],
-    [
-      "missing regex and replacement terminators",
-      "s/a",
-      [
-        "incomplete_syntax/unterminated_regex",
-        "incomplete_syntax/unterminated_operand",
-      ],
-    ],
-    [
-      "missing group closer",
-      `/${opening}a/p`,
-      ["invalid_syntax/missing_closing_delimiter"],
-    ],
-    [
-      "missing bracket closer",
-      "/[a",
-      [
-        "incomplete_syntax/missing_closing_delimiter",
-        "incomplete_syntax/unterminated_regex",
-        "incomplete_syntax/missing_command",
-      ],
-    ],
-    [
-      "missing escape character",
-      "/a\\",
-      [
-        "incomplete_syntax/missing_escape_character",
-        "incomplete_syntax/unterminated_regex",
-        "incomplete_syntax/missing_command",
-      ],
-    ],
-    [
-      "bracket backslash at EOF is literal",
-      "/[\\",
-      [
-        "incomplete_syntax/missing_closing_delimiter",
-        "incomplete_syntax/unterminated_regex",
-        "incomplete_syntax/missing_command",
-      ],
-    ],
-    [
-      "bracket control escape at EOF",
-      "/[\\c",
-      [
-        "incomplete_syntax/missing_escape_character",
-        "incomplete_syntax/missing_closing_delimiter",
-        "incomplete_syntax/unterminated_regex",
-        "incomplete_syntax/missing_command",
-      ],
-    ],
-    [
-      "raw bracket control escape before newline",
-      "s/[\\c\n",
-      [
-        "invalid_syntax/missing_escape_character",
-        "invalid_syntax/missing_closing_delimiter",
-        "invalid_syntax/unterminated_regex",
-        "invalid_syntax/unterminated_operand",
-      ],
-    ],
-    [
-      "interval escape at EOF",
-      `/a${intervalOpen}\\`,
-      [
-        "incomplete_syntax/missing_escape_character",
-        "incomplete_syntax/missing_closing_delimiter",
-        "incomplete_syntax/unterminated_regex",
-        "incomplete_syntax/missing_command",
-      ],
-    ],
-    [
-      "interval encoded backslash before delimiter",
-      `s/a${intervalOpen}\\x5c/x/`,
-      [
-        "invalid_syntax/missing_escape_character",
-        "invalid_syntax/missing_closing_delimiter",
-      ],
-    ],
-    [
-      "zero step digits at EOF",
-      "0~0",
-      [
-        "incomplete_syntax/invalid_zero_address",
-        "incomplete_syntax/missing_command",
-      ],
-    ],
-    [
-      "zero step before blank",
-      "0~0 ",
-      [
-        "incomplete_syntax/invalid_zero_address",
-        "incomplete_syntax/missing_command",
-      ],
-    ],
-    [
-      "zero occurrence at EOF",
-      "s/a/b/0",
-      ["incomplete_syntax/zero_occurrence"],
-    ],
-    [
-      "zero occurrence before blank",
-      "s/a/b/0 ",
-      ["invalid_syntax/zero_occurrence"],
-    ],
-  ]) {
-    test(`${scope}: ${name}`, () => {
-      const result = parseSuccessfully(scope, source);
-      assert.deepEqual(
-        issueSignatures(result.nodes).map(
-          ({ outcome, reason }) => `${outcome}/${reason}`,
-        ),
-        expected,
-        result.stdout,
-      );
-    });
-  }
-}
-
-for (const [scope, open, close, alternations] of [
-  ["source.gsed", "\\{", "\\}", 0],
-  ["source.gsed.ere", "{", "}", 1],
-]) {
-  for (const [inside, expected] of [
-    ["", ["missing_interval_count"]],
-    ["b2", ["invalid_interval_character"]],
-    ["2,x", ["invalid_interval_character"]],
-    ["\\2", ["invalid_interval_character"]],
-    ["1\\,2", ["invalid_interval_character"]],
-    [",2", []],
-  ]) {
-    test(`${scope}: interval contents ${JSON.stringify(inside)}`, () => {
-      const result = parseSuccessfully(scope, `s/a${open}${inside}${close}/b/`);
-      assert.deepEqual(
-        issueSignatures(result.nodes).map(({ reason }) => reason),
-        expected,
-        result.stdout,
-      );
-    });
-  }
   test(`${scope}: invalid UTF-8 is interval content`, () => {
     const result = parseSuccessfully(
       scope,
       Buffer.concat([
         Buffer.from(`s/a${open}`),
-        Buffer.from([255]),
+        Buffer.from([0xff]),
         Buffer.from(`${close}/b/`),
       ]),
     );
@@ -1311,357 +108,371 @@ for (const [scope, open, close, alternations] of [
       result.stdout,
     );
   });
-  test(`${scope}: delimiter escaping precedes regex syntax`, () => {
-    const result = parseSuccessfully(scope, "s|a\\|b|x|");
-    assert.deepEqual(issueSignatures(result.nodes), []);
-    assert.equal(
-      result.nodes.filter((node) => node.kind === "escape").length,
-      1,
-    );
-    assert.equal(
-      result.nodes.filter((node) => node.kind === "regex_branch").length,
-      Number(alternations) + 1,
-      result.stdout,
-    );
-  });
-}
-
-for (const [source, expected] of [
-  [String.raw`s/a\b\{/x/`, ["invalid_interval_syntax"]],
-  [String.raw`s/a\B\{x\}/x/`, ["invalid_interval_syntax"]],
-  [String.raw`s/a\<\{\}/x/`, ["invalid_interval_syntax"]],
-  [String.raw`s/a\>\{1,2,3\}/x/`, ["invalid_interval_syntax"]],
-  ["s/a\\`\\{/x/", ["invalid_interval_syntax"]],
-  [String.raw`s/a\'\{/x/`, ["invalid_interval_syntax"]],
-  [String.raw`s/a\b\B\{/x/`, ["invalid_interval_syntax"]],
-  [String.raw`s/\(a\)\b\{/x/`, ["invalid_interval_syntax"]],
-  [String.raw`s/\b\{/x/`, []],
-  [String.raw`s/a\|\b\{/x/`, []],
-  [String.raw`s/\(\b\{\)/x/`, []],
-  [String.raw`s/a\b\{1\}/x/`, []],
-  [String.raw`s/a\b\{,\}/x/`, []],
-  [String.raw`s/a\b\{\x31\}/x/`, []],
-]) {
-  test(`source.gsed: interval syntax after word boundaries ${JSON.stringify(source)}`, () => {
-    const { nodes } = parseSuccessfully("source.gsed", source);
-    assert.deepEqual(
-      issueSignatures(nodes).map(({ reason }) => reason),
-      expected,
-    );
-    assert.equal(
-      nodes.some(({ kind }) => kind === "interval" || kind === "repetition"),
-      false,
-    );
-    for (const reason of nodes.filter(
-      ({ kind }) => kind === "invalid_interval_syntax",
-    )) {
-      assert.equal(
-        source.slice(reason.startByte, reason.endByte),
-        String.raw`\{`,
-      );
-      assert.equal(
-        nodes[nodes[nodes[reason.parent].parent].parent].kind,
-        "regex_character",
-      );
-    }
-  });
 }
 
 for (const scope of ["source.gsed", "source.gsed.ere"]) {
-  const open = scope.endsWith("ere") ? "(" : "\\(";
-  const close = scope.endsWith("ere") ? ")" : "\\)";
-  for (const [name, source] of [
-    ["100000 commands", "p;".repeat(100000)],
-    ["one MiB text operand", `a ${"x".repeat(1024 * 1024)}`],
-    ["100000 regex characters", `s/${"a".repeat(100000)}/b/`],
-    ["2000 nested blocks", `${"{".repeat(2000)}p${"}".repeat(2000)}`],
-    ["2000 nested groups", `s/${open.repeat(2000)}a${close.repeat(2000)}/b/`],
-    ["2000 unclosed groups", `s/${open.repeat(2000)}a`],
-  ]) {
-    test(`${scope}: resources ${name}`, () => {
-      const result = parseSummary(scope, source, 10_000_000);
-      assert.equal(result.successful, true, JSON.stringify(result));
-      console.log(
-        `${scope}: ${name}: ${result.bytes} bytes, ${result.duration.secs * 1000 + result.duration.nanos / 1e6} ms`,
-      );
-    });
-  }
-}
-
-for (const scope of ["source.gsed", "source.gsed.ere"]) {
-  for (const [name, source, delimiters] of [
-    ["substitution", String.raw`s\b\X\p`, ["\\", "\\", "\\"]],
-    ["translation", String.raw`y\abc\xyz\;p`, ["\\", "\\", "\\"]],
-    ["address", String.raw`\\b\p`, ["\\\\", "\\"]],
-    ["bracket escape", String.raw`s\[\t]\X\p`, ["\\", "\\", "\\"]],
-  ]) {
-    test(`${scope}: backslash delimiter in ${name}`, () => {
-      const { nodes } = parseSuccessfully(scope, source);
-      assert.deepEqual(issueSignatures(nodes), []);
-      assert.deepEqual(
-        nodes
-          .filter(({ kind }) => kind === "delimiter")
-          .map(({ startByte, endByte }) => source.slice(startByte, endByte)),
-        delimiters,
-      );
-    });
-  }
-
-  for (const prefix of ["a ", "e "]) {
-    const literal = prefix === "a " ? "literal" : "shell_text";
-    for (const [name, body, expected] of [
-      [
-        "odd terminal backslash",
-        "x\\t\\",
-        [
-          [literal, "x\\t"],
-          ["escape", "\\"],
-        ],
-      ],
-      [
-        "raw control escape",
-        "x\\c\\.\\",
-        [
-          [literal, "x\\c\\."],
-          ["escape", "\\"],
-        ],
-      ],
-      [
-        "three terminal backslashes",
-        "x\\t\\\\\\",
-        [
-          [literal, "x\\t\\\\"],
-          ["escape", "\\"],
-        ],
-      ],
-      [
-        "even terminal backslashes",
-        "x\\t\\\\",
-        [
-          [literal, "x"],
-          ["character_escape", "\\t"],
-          ["escape", "\\\\"],
-        ],
-      ],
-      [
-        "continued raw body",
-        "x\\t\\\ny\\n\\",
-        [
-          [literal, "x\\t"],
-          ["line_continuation", "\\\n"],
-          [literal, "y\\n"],
-          ["escape", "\\"],
-        ],
-      ],
-      [
-        "terminated body",
-        "x\\t\n",
-        [
-          [literal, "x"],
-          ["character_escape", "\\t"],
-        ],
-      ],
-    ]) {
-      test(`${scope}: ${prefix.trim()} ${name}`, () => {
-        const source = prefix + body;
-        const { nodes } = parseSuccessfully(scope, source);
-        assert.deepEqual(issueSignatures(nodes), []);
-        assert.deepEqual(
-          nodes
-            .filter(({ kind }) =>
-              [
-                literal,
-                "escape",
-                "character_escape",
-                "line_continuation",
-              ].includes(kind),
-            )
-            .map(({ kind, startByte, endByte }) => [
-              kind,
-              source.slice(startByte, endByte),
-            ]),
-          expected,
-        );
-      });
-    }
-  }
-
   for (const verb of ["a", "e"]) {
-    const literal = verb === "a" ? "literal" : "shell_text";
-    for (const [suffix, expected] of [
+    for (const [name, suffix] of [
+      ["four backslashes before a terminating newline", `${"\\".repeat(4)}\nx`],
+      ["four backslashes at EOF", "\\".repeat(4)],
       [
-        "\\x70",
-        [
-          ["text_introducer", "\\"],
-          [literal, "x70"],
-        ],
-      ],
-      [
-        "\\\nx\\t",
-        [
-          ["text_introducer", "\\\n"],
-          [literal, "x"],
-          ["character_escape", "\\t"],
-        ],
-      ],
-      [
-        "\\\\t\\",
-        [
-          ["text_introducer", "\\"],
-          [literal, "\\t"],
-          ["escape", "\\"],
-        ],
-      ],
-      [
-        "\\\\\\",
-        [
-          ["text_introducer", "\\"],
-          [literal, "\\"],
-          ["escape", "\\"],
-        ],
-      ],
-      [
-        "\\\\\\\\",
-        [
-          ["text_introducer", "\\"],
-          ["escape", "\\\\"],
-          ["escape", "\\"],
-        ],
+        "two backslashes after the introducer continue the line",
+        `${"\\".repeat(3)}\nx`,
       ],
     ]) {
-      test(`${scope}: ${verb} introducer precedes escape processing ${JSON.stringify(suffix)}`, () => {
-        const source = verb + suffix;
-        const { nodes } = parseSuccessfully(scope, source);
-        assert.deepEqual(issueSignatures(nodes), []);
-        assert.deepEqual(
-          nodes
-            .filter(({ kind }) =>
-              [
-                "text_introducer",
-                literal,
-                "escape",
-                "character_escape",
-              ].includes(kind),
-            )
-            .map(({ kind, startByte, endByte }) => [
-              kind,
-              source.slice(startByte, endByte),
-            ]),
-          expected,
+      test(`${scope}: ${verb} ${name} preserves source boundaries across EOF edits`, () => {
+        const source = `1${verb}${suffix}`;
+        const original = parseSuccessfully(scope, source);
+        const edit = source.endsWith("\nx")
+          ? { byte: source.length - 2, deleteBytes: 2, insert: "" }
+          : { byte: source.length, deleteBytes: 0, insert: "\nx" };
+        const edited = applyEdits(source, [edit]);
+        assertIncrementalContract(
+          parseSuccessfully(scope, edited),
+          parseSuccessfully(scope, source, [edit]),
+          name,
+        );
+        const undo = {
+          byte: edit.byte,
+          deleteBytes: edit.insert.length,
+          insert: source.slice(edit.byte, edit.byte + edit.deleteBytes),
+        };
+        assertIncrementalContract(
+          original,
+          parseSuccessfully(scope, source, [edit, undo]),
+          `${name}: restored`,
         );
       });
     }
   }
 
-  test(`${scope}: execute operand owns sed escape issues`, () => {
-    const source = String.raw`e x\c\y`;
-    const { nodes } = parseSuccessfully(scope, source);
-    assert.deepEqual(issueSignatures(nodes), [
-      {
-        outcome: "invalid_syntax",
-        reason: "invalid_control_escape",
-        range: "[0, 3] - [0, 6]",
-      },
-    ]);
-    const issue = nodes.find(({ kind }) => kind === "syntax_issue");
-    assert.equal(nodes[issue.parent].kind, "shell_command");
-    assert.ok(
-      nodes.some(
-        ({ kind, startByte, endByte }) =>
-          kind === "character_escape" &&
-          source.slice(startByte, endByte) === "\\c\\",
-      ),
-    );
-  });
-
-  for (const [name, source, escapes, references] of [
-    ["first hexadecimal digit", String.raw`s5\x\55X5p`, [String.raw`\x\5`], []],
-    [
-      "second hexadecimal digit",
-      String.raw`s5\x6\55X5p`,
-      [String.raw`\x6\5`],
-      [],
-    ],
-    [
-      "both hexadecimal digits",
-      String.raw`s5\x\5\55X5p`,
-      [String.raw`\x\5\5`],
-      [],
-    ],
-    ["decimal digit", String.raw`s5\d6\55X5p`, [String.raw`\d6\5`], []],
-    ["octal digit", String.raw`s5\o10\55X5p`, [String.raw`\o10\5`], []],
-    ["replacement digit", String.raw`s5a5\x\55p`, [String.raw`\x\5`], []],
-    ["translation digit", String.raw`y5\x\55X5`, [String.raw`\x\5`], []],
-    [
-      "ordinary following escape",
-      String.raw`s5\x6\65X5p`,
-      [String.raw`\x6`],
-      [String.raw`\6`],
-    ],
-    ["no numeric digit", String.raw`s5\x\65X5p`, [], [String.raw`\6`]],
-    [
-      "encoded bracket delimiters",
-      String.raw`s5\x\5ba\x\5d5X5`,
-      [String.raw`\x\5b`, String.raw`\x\5d`],
-      [],
-    ],
+  for (const { name, source } of [
+    {
+      name: "pattern",
+      source: "s/\\cΣ*/x/",
+    },
+    {
+      name: "address",
+      source: "/^\\cΣ*$/p",
+    },
+    {
+      name: "bracket",
+      source: "s/[\\cΣ]/x/",
+    },
+    {
+      name: "replacement",
+      source: "s/x/\\cΣ/",
+    },
+    {
+      name: "translation",
+      source: "y/\\cΣ/x/",
+    },
+    { name: "text", source: "a x\\cΣ" },
+    {
+      name: "shell operand",
+      source: "e x\\cΣ",
+    },
   ]) {
-    test(`${scope}: delimiter removal precedes ${name}`, () => {
-      const { nodes } = parseSuccessfully(scope, source);
-      assert.deepEqual(issueSignatures(nodes), []);
-      for (const [kind, expected] of [
-        ["character_escape", escapes],
-        ["regex_reference", references],
-      ]) {
-        assert.deepEqual(
-          nodes
-            .filter((node) => node.kind === kind)
-            .map(({ startByte, endByte }) => source.slice(startByte, endByte)),
-          expected,
-        );
-      }
-    });
-  }
-
-  for (const [source, comma] of [
-    ["   ,2p", 3],
-    ["p;   ,2p", 5],
-    ["{   ,2p}", 4],
-  ]) {
-    test(`${scope}: missing first address begins at comma in ${JSON.stringify(source)}`, () => {
-      const { nodes } = parseSuccessfully(scope, source);
-      assert.deepEqual(issueSignatures(nodes), [
-        {
-          outcome: "invalid_syntax",
-          reason: "missing_address",
-          range: `[0, ${comma}] - [0, ${comma}]`,
-        },
-      ]);
-      assert.equal(
-        nodes.filter(({ kind }) => kind === "command").at(-1).startByte,
-        comma,
+    test(`${scope}: non-ASCII control escape in ${name} survives ASCII replacement and restoration`, () => {
+      const original = parseSuccessfully(scope, source);
+      const byte = Buffer.byteLength(source.slice(0, source.indexOf("Σ")));
+      const edit = { byte, deleteBytes: Buffer.byteLength("Σ"), insert: "A" };
+      assertIncrementalContract(
+        parseSuccessfully(scope, applyEdits(source, [edit])),
+        parseSuccessfully(scope, source, [edit]),
+        `${name}: ASCII operand`,
+      );
+      assertIncrementalContract(
+        original,
+        parseSuccessfully(scope, source, [
+          edit,
+          { byte, deleteBytes: Buffer.byteLength(edit.insert), insert: "Σ" },
+        ]),
+        `${name}: restored UTF-8 operand`,
       );
     });
   }
 }
 
-test("source.gsed.ere: escaped numeric closing keeps the empty interval issue at its opening", () => {
-  const source = String.raw`sDa{\x7\DDXD`;
-  const { nodes } = parseSuccessfully("source.gsed.ere", source);
-  assert.deepEqual(issueSignatures(nodes), [
+for (const scope of ["source.gsed", "source.gsed.ere"]) {
+  test(`${scope}: reused bracket atoms follow the range operator decision`, () => {
+    for (const [source, byte] of [
+      ["/[Nabt-\\x5d", 10],
+      ["/[Nab[.t.]-\\x5d", 14],
+      ["/[Nab\\xce-\\x5d", 13],
+      ["/[Nab[-\\x5d", 10],
+    ]) {
+      const edits = [
+        { byte: 2, deleteBytes: 1, insert: "N" },
+        { byte, deleteBytes: 1, insert: "" },
+      ];
+      assertIncrementalContract(
+        parse(scope, applyEdits(source, edits)),
+        parse(scope, source, edits),
+        `${JSON.stringify(source)} ${JSON.stringify(edits)}`,
+      );
+    }
+  });
+
+  test(`${scope}: optional operands after a zero step range follow appended text`, () => {
+    for (const [source, insert] of [
+      ["0~0,/a/e ", ";"],
+      ["0~0,/a/b ", "x"],
+      ["0~0,/a/T ", "x"],
+      ["0~0,/a/v ", "4"],
+      ["0~,/a/l ", "5"],
+    ]) {
+      const edits = [
+        { byte: Buffer.byteLength(source), deleteBytes: 0, insert },
+      ];
+      const fresh = parseSuccessfully(scope, applyEdits(source, edits));
+      assertIncrementalContract(
+        fresh,
+        parseSuccessfully(scope, source, edits),
+        `${JSON.stringify(source)} + ${JSON.stringify(insert)}`,
+      );
+    }
+  });
+
+  test(`${scope}: zero address validity survives edits around nested zero addresses`, () => {
+    for (const { source, edits } of [
+      {
+        source: "00~0,//{$!\n0~!;0;$y",
+        edits: [{ byte: 0, deleteBytes: 3, insert: "" }],
+      },
+      {
+        source: "0,//{$!\n0~!;0;$y",
+        edits: [{ byte: 0, deleteBytes: 0, insert: "00~" }],
+      },
+      {
+        source: "0,/a/{p;0,/b/{0~0,/c/p}}",
+        edits: [{ byte: 1, deleteBytes: 4, insert: "q" }],
+      },
+    ]) {
+      assertIncrementalContract(
+        parseSuccessfully(scope, applyEdits(source, edits)),
+        parseSuccessfully(scope, source, edits),
+        `${JSON.stringify(source)} ${JSON.stringify(edits)}`,
+      );
+    }
+  });
+
+  test(`${scope}: optional operand after a missing range end preserves incremental CST`, () => {
+    for (const [source, insert] of [
+      ["1,e ", "x"],
+      ["1,b ", "x"],
+      ["1,l ", "5"],
+    ]) {
+      const edits = [{ byte: source.length, deleteBytes: 0, insert }];
+      assertIncrementalContract(
+        parse(scope, applyEdits(source, edits)),
+        parse(scope, source, edits),
+        `${JSON.stringify(source)} + ${JSON.stringify(insert)}`,
+      );
+    }
+  });
+
+  test(`${scope}: leading layout edits preserve directive placement`, () => {
+    for (const edits of [
+      [{ byte: 0, deleteBytes: 0, insert: " " }],
+      [
+        { byte: 0, deleteBytes: 0, insert: " " },
+        { byte: 0, deleteBytes: 1, insert: "" },
+      ],
+    ]) {
+      const source = "#n\np";
+      assertIncrementalContract(
+        parseSuccessfully(scope, applyEdits(source, edits)),
+        parseSuccessfully(scope, source, edits),
+        "leading layout",
+      );
+    }
+  });
+
+  for (const { source, suffix } of [
     {
-      outcome: "invalid_syntax",
-      reason: "missing_interval_count",
-      range: "[0, 4] - [0, 4]",
+      source: String.raw`/[[:a\c`,
+      suffix: ",pha:]]/p",
     },
-  ]);
-  assert.ok(
-    nodes.some(
-      ({ kind, startByte, endByte }) =>
-        kind === "character_escape" &&
-        source.slice(startByte, endByte) === String.raw`\x7\D`,
-    ),
-  );
+    { source: "/[[:a\\", suffix: "x6cpha:]]/p" },
+    {
+      source: String.raw`/[[:a\x6`,
+      suffix: "cpha:]]/p",
+    },
+    {
+      source: String.raw`/[[:a\o1`,
+      suffix: "54pha:]]/p",
+    },
+    {
+      source: String.raw`/[[:a\d1`,
+      suffix: "08pha:]]/p",
+    },
+    {
+      source: String.raw`/[[:a\x`,
+      suffix: "6cpha:]]/p",
+    },
+    { source: String.raw`/[[:alph\d97`, suffix: ":]]/p" },
+  ]) {
+    test(`${scope}: character class escape completion ${JSON.stringify(source)}`, () => {
+      const edits = [
+        { byte: Buffer.byteLength(source), deleteBytes: 0, insert: suffix },
+      ];
+      const fresh = parseSuccessfully(scope, applyEdits(source, edits));
+      assertIncrementalContract(
+        fresh,
+        parseSuccessfully(scope, source, edits),
+        source,
+      );
+    });
+  }
+
+  test(`${scope}: boundary decisions survive edits`, () => {
+    for (const { source, byte, deleteBytes, insert } of [
+      { source: "{p;!}", byte: 3, deleteBytes: 0, insert: "1" },
+      { source: "{p;1!}", byte: 3, deleteBytes: 1, insert: "" },
+      { source: "{p;1!}", byte: 5, deleteBytes: 1, insert: "" },
+      { source: "1, p", byte: 2, deleteBytes: 0, insert: "2" },
+      { source: "1,2,  p", byte: 4, deleteBytes: 0, insert: "3" },
+      { source: ":\0x", byte: 1, deleteBytes: 0, insert: "a" },
+      { source: ":a\0x", byte: 1, deleteBytes: 1, insert: "" },
+      {
+        source: String.raw`s/\x5c\\x5e/x/`,
+        byte: 7,
+        deleteBytes: 1,
+        insert: "",
+      },
+      {
+        source: String.raw`s/\x5c\x5e/x/`,
+        byte: 7,
+        deleteBytes: 0,
+        insert: "\\",
+      },
+    ]) {
+      const edits = [{ byte, deleteBytes, insert }];
+      const fresh = parseSuccessfully(scope, applyEdits(source, edits));
+      assertIncrementalContract(
+        fresh,
+        parseSuccessfully(scope, source, edits),
+        JSON.stringify([source, edits]),
+      );
+    }
+  });
+
+  test(`${scope}: control escape, NUL and zero address edits agree with fresh parsing`, () => {
+    for (const { source, byte, deleteBytes, insert } of [
+      { source: "ax\\c\\", byte: 5, deleteBytes: 0, insert: "." },
+      { source: "ax\\c\\.", byte: 5, deleteBytes: 0, insert: "\\" },
+      { source: "r x\0tail", byte: 2, deleteBytes: 1, insert: "" },
+      { source: "s\0", byte: 1, deleteBytes: 1, insert: "/" },
+      { source: "0~0", byte: 3, deleteBytes: 0, insert: "r x" },
+      { source: "0~0,", byte: 4, deleteBytes: 0, insert: "/a/p" },
+      { source: "0~0r x", byte: 2, deleteBytes: 1, insert: "2" },
+    ]) {
+      const edits = [{ byte, deleteBytes, insert }];
+      assertIncrementalContract(
+        parseSuccessfully(scope, applyEdits(source, edits)),
+        parseSuccessfully(scope, source, edits),
+        source,
+      );
+    }
+  });
+
+  test(`${scope}: incomplete control backslash can be completed at EOF`, () => {
+    const source = "s/\\c\\";
+    const edits = [{ byte: 5, deleteBytes: 0, insert: "\\./x/" }];
+    const fresh = parseSuccessfully(scope, applyEdits(source, edits));
+    assertIncrementalContract(
+      fresh,
+      parseSuccessfully(scope, source, edits),
+      source,
+    );
+  });
+
+  test(`${scope}: address and control escape edits preserve the public CST`, () => {
+    for (const { source, byte, deleteBytes, insert } of [
+      { source: "+p", byte: 1, deleteBytes: 0, insert: "3" },
+      { source: "+3p", byte: 1, deleteBytes: 1, insert: "0" },
+      { source: "+0p", byte: 1, deleteBytes: 1, insert: "" },
+      { source: "1,+p", byte: 3, deleteBytes: 0, insert: "2" },
+      { source: "1~2p", byte: 2, deleteBytes: 1, insert: "" },
+      { source: String.raw`s/\c\./x/`, byte: 5, deleteBytes: 0, insert: "\\" },
+      { source: String.raw`s/\c\\./x/`, byte: 5, deleteBytes: 1, insert: "" },
+      { source: String.raw`s/\c\\c/x/`, byte: 6, deleteBytes: 1, insert: "." },
+      { source: String.raw`sc\c\.cxc`, byte: 1, deleteBytes: 1, insert: "/" },
+      {
+        source: String.raw`sx\c\\\\x5dxYx`,
+        byte: 7,
+        deleteBytes: 1,
+        insert: "",
+      },
+      {
+        source: String.raw`sx\c\\\x5dxYx`,
+        byte: 7,
+        deleteBytes: 0,
+        insert: "\\",
+      },
+      { source: "s/\\c\\\\\\\\\n/x/", byte: 7, deleteBytes: 1, insert: "" },
+      { source: "s/\\c\\\\\\\n/x/", byte: 6, deleteBytes: 0, insert: "\\" },
+    ]) {
+      const edits = [{ byte, deleteBytes, insert }];
+      const fresh = parseSuccessfully(scope, applyEdits(source, edits));
+      assertIncrementalContract(
+        fresh,
+        parseSuccessfully(scope, source, edits),
+        JSON.stringify({ source, edits }),
+      );
+    }
+  });
+}
+
+for (const [scope, pattern] of [
+  ["source.gsed", "\\)"],
+  ["source.gsed", "\\x5c)"],
+  ["source.gsed.ere", ")"],
+  ["source.gsed.ere", "\\x29"],
+  ["source.gsed.ere", "*"],
+  ["source.gsed.ere", "\\x2a"],
+  ["source.gsed.ere", "{2}"],
+  ["source.gsed.ere", "\\x7b2}"],
+]) {
+  test(`${scope}: deletion preserves issue structure in ${JSON.stringify(pattern)}`, () => {
+    const source = `s/${pattern}/x/`;
+    for (let byte = 0; byte < source.length; byte++) {
+      const edits = [{ byte, deleteBytes: 1, insert: "" }];
+      assertIncrementalContract(
+        parse(scope, applyEdits(source, edits)),
+        parse(scope, source, edits),
+        `delete ${byte} in ${source}`,
+      );
+    }
+  });
+}
+
+test("source.gsed: literal interval lookahead survives edits and EOF completion", () => {
+  for (const { source, byte, deleteBytes, insert } of [
+    { source: String.raw`s/a\b\{1\}/x/`, byte: 7, deleteBytes: 1, insert: "x" },
+    { source: String.raw`s/a\b\{x\}/x/`, byte: 7, deleteBytes: 1, insert: "1" },
+    { source: String.raw`s/\b\{/x/`, byte: 2, deleteBytes: 0, insert: "a" },
+    {
+      source: String.raw`s/a\b\{`,
+      byte: 7,
+      deleteBytes: 0,
+      insert: String.raw`1\}/x/`,
+    },
+    {
+      source: String.raw`s/a\b\{1`,
+      byte: 8,
+      deleteBytes: 0,
+      insert: String.raw`\}/x/`,
+    },
+  ]) {
+    const edits = [{ byte, deleteBytes, insert }];
+    assertIncrementalContract(
+      parseSuccessfully("source.gsed", applyEdits(source, edits)),
+      parseSuccessfully("source.gsed", source, edits),
+      source,
+    );
+  }
 });
 
 test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
@@ -1675,6 +486,39 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
       LANG: "en_US.UTF-8",
     },
     cases: [
+      ...[
+        {
+          name: "triple_hyphen_between_punctuation",
+          pattern: "[!---0]",
+          status: 0,
+        },
+        {
+          name: "triple_hyphen_between_letters",
+          pattern: "[a---c]",
+          status: 0,
+        },
+        { name: "triple_hyphen_after_range", pattern: "[a-b---c]", status: 0 },
+        {
+          name: "numeric_escape_in_hyphen_run",
+          pattern: String.raw`[a-\x2d-c]`,
+          status: 0,
+        },
+        { name: "shared_letter_range_endpoint", pattern: "[a-c-e]", status: 1 },
+        { name: "double_hyphen_after_range", pattern: "[a-b--c]", status: 1 },
+      ].flatMap(({ name, pattern, status }) =>
+        [false, true].map((extended) => ({
+          name: `${name}_${extended ? "ere" : "bre"}`,
+          arguments: ["-n", ...(extended ? ["-E"] : []), "-f", "script.sed"],
+          script: `/${pattern}/p`,
+          input: "",
+          stdout: "",
+          stderr:
+            status === 0
+              ? ""
+              : "/opt/homebrew/bin/gsed: file script.sed line 1: Invalid range end\n",
+          status,
+        })),
+      ),
       {
         name: "empty_group_bre",
         arguments: ["-n", "-e", "s/\\(\\)/x/"],
@@ -1840,6 +684,16 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         stdout: "",
         stderr: "",
         status: 0,
+      },
+      {
+        name: "bracket_after_term_close_marker",
+        arguments: ["-n", "-e", "s/[[=a=[]/]/x/"],
+        script: "s/[[=a=[]/]/x/",
+        input: "",
+        stdout: "",
+        stderr:
+          "/opt/homebrew/bin/gsed: -e expression #1, char 14: Unmatched [, [^, [:, [., or [=\n",
+        status: 1,
       },
       {
         name: "escaped_delimiter_alternation",
@@ -2577,7 +1431,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "address_or_interval_96",
+        name: "ERE: two-address range for q",
         arguments: ["-n", "-E", "-e", "1,2q"],
         script: "1,2q",
         input: "",
@@ -2587,7 +1441,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 1,
       },
       {
-        name: "address_or_interval_97",
+        name: "ERE: two-address range for Q",
         arguments: ["-n", "-E", "-e", "1,2Q"],
         script: "1,2Q",
         input: "",
@@ -2597,7 +1451,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 1,
       },
       {
-        name: "address_or_interval_98",
+        name: "ERE: two-address range for l",
         arguments: ["-n", "-E", "-e", "1,2l"],
         script: "1,2l",
         input: "",
@@ -2606,7 +1460,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "address_or_interval_99",
+        name: "ERE: two-address range for =",
         arguments: ["-n", "-E", "-e", "1,2="],
         script: "1,2=",
         input: "",
@@ -2615,7 +1469,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "address_or_interval_100",
+        name: "ERE: two-address range for F",
         arguments: ["-n", "-E", "-e", "1,2F"],
         script: "1,2F",
         input: "",
@@ -2624,7 +1478,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "address_or_interval_101",
+        name: "ERE: two-address range for v",
         arguments: ["-n", "-E", "-e", "1,2v"],
         script: "1,2v",
         input: "",
@@ -2633,7 +1487,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "address_or_interval_102",
+        name: "ERE: two-address range for a label definition",
         arguments: ["-n", "-E", "-e", "1,2:label"],
         script: "1,2:label",
         input: "",
@@ -2643,7 +1497,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 1,
       },
       {
-        name: "address_or_interval_103",
+        name: "ERE: two-address range for append text",
         arguments: ["-n", "-E", "-e", "1,2a hi"],
         script: "1,2a hi",
         input: "",
@@ -2652,7 +1506,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "address_or_interval_104",
+        name: "ERE: two-address range for insert text",
         arguments: ["-n", "-E", "-e", "1,2i hi"],
         script: "1,2i hi",
         input: "",
@@ -2661,7 +1515,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "address_or_interval_105",
+        name: "ERE: two-address range for r",
         arguments: ["-n", "-E", "-e", "1,2r absent"],
         script: "1,2r absent",
         input: "",
@@ -2670,7 +1524,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "address_or_interval_106",
+        name: "ERE: two-address range for R",
         arguments: ["-n", "-E", "-e", "1,2R absent"],
         script: "1,2R absent",
         input: "",
@@ -2679,7 +1533,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "address_or_interval_107",
+        name: "ERE: two-address range for a comment",
         arguments: ["-n", "-E", "-e", "1,2#comment"],
         script: "1,2#comment",
         input: "",
@@ -2689,7 +1543,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 1,
       },
       {
-        name: "address_or_interval_108",
+        name: "ERE: two-address range for a resolved branch",
         arguments: ["-n", "-E", "-e", "1,2b label\n:label"],
         script: "1,2b label\n:label",
         input: "",
@@ -2698,7 +1552,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "address_or_interval_109",
+        name: "ERE: zero address before p",
         arguments: ["-n", "-E", "-e", "0p"],
         script: "0p",
         input: "",
@@ -2708,7 +1562,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 1,
       },
       {
-        name: "address_or_interval_110",
+        name: "ERE: multiple zero digits before p",
         arguments: ["-n", "-E", "-e", "00p"],
         script: "00p",
         input: "",
@@ -2718,7 +1572,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 1,
       },
       {
-        name: "address_or_interval_111",
+        name: "ERE: zero start with a nonzero step",
         arguments: ["-n", "-E", "-e", "0~2p"],
         script: "0~2p",
         input: "",
@@ -2727,7 +1581,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "address_or_interval_112",
+        name: "ERE: zero start with a regex range end",
         arguments: ["-n", "-E", "-e", "0,/a/p"],
         script: "0,/a/p",
         input: "",
@@ -2736,7 +1590,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "address_or_interval_113",
+        name: "ERE: zero address before r",
         arguments: ["-n", "-E", "-e", "0r absent"],
         script: "0r absent",
         input: "",
@@ -2745,7 +1599,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "address_or_interval_114",
+        name: "ERE: zero address before R",
         arguments: ["-n", "-E", "-e", "0R absent"],
         script: "0R absent",
         input: "",
@@ -2755,7 +1609,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 1,
       },
       {
-        name: "address_or_interval_115",
+        name: "ERE: zero address before w",
         arguments: ["-n", "-E", "-e", "0w out"],
         script: "0w out",
         input: "",
@@ -2765,7 +1619,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 1,
       },
       {
-        name: "address_or_interval_116",
+        name: "ERE: negated zero address before r",
         arguments: ["-n", "-E", "-e", "0!r absent"],
         script: "0!r absent",
         input: "",
@@ -2775,7 +1629,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 1,
       },
       {
-        name: "address_or_interval_117",
+        name: "ERE: zero start with a line number range end",
         arguments: ["-n", "-E", "-e", "0,1p"],
         script: "0,1p",
         input: "",
@@ -2785,7 +1639,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 1,
       },
       {
-        name: "address_or_interval_118",
+        name: "ERE: zero line number as a range end",
         arguments: ["-n", "-E", "-e", "1,0p"],
         script: "1,0p",
         input: "",
@@ -2794,7 +1648,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "address_or_interval_119",
+        name: "ERE: zero step as a range end",
         arguments: ["-n", "-E", "-e", "1,~0p"],
         script: "1,~0p",
         input: "",
@@ -2803,7 +1657,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "address_or_interval_120",
+        name: "ERE: zero start and zero step range end",
         arguments: ["-n", "-E", "-e", "0,~0p"],
         script: "0,~0p",
         input: "",
@@ -2813,7 +1667,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 1,
       },
       {
-        name: "address_or_interval_121",
+        name: "ERE: address before a comment",
         arguments: ["-n", "-E", "-e", "1#comment"],
         script: "1#comment",
         input: "",
@@ -2823,7 +1677,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 1,
       },
       {
-        name: "address_or_interval_122",
+        name: "ERE: address before a label definition",
         arguments: ["-n", "-E", "-e", "1:label"],
         script: "1:label",
         input: "",
@@ -2833,7 +1687,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 1,
       },
       {
-        name: "address_or_interval_123",
+        name: "ERE: address before a version command",
         arguments: ["-n", "-E", "-e", "1v"],
         script: "1v",
         input: "",
@@ -2842,7 +1696,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "address_or_interval_124",
+        name: "ERE: three line number addresses",
         arguments: ["-n", "-E", "-e", "1,2,3p"],
         script: "1,2,3p",
         input: "",
@@ -2852,7 +1706,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 1,
       },
       {
-        name: "address_or_interval_125",
+        name: "ERE: missing first address",
         arguments: ["-n", "-E", "-e", ",2p"],
         script: ",2p",
         input: "",
@@ -2862,7 +1716,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 1,
       },
       {
-        name: "address_or_interval_126",
+        name: "ERE: missing second address",
         arguments: ["-n", "-E", "-e", "1,p"],
         script: "1,p",
         input: "",
@@ -2872,7 +1726,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 1,
       },
       {
-        name: "address_or_interval_127",
+        name: "ERE: missing step after a nonzero start",
         arguments: ["-n", "-E", "-e", "1~p"],
         script: "1~p",
         input: "",
@@ -2881,7 +1735,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "address_or_interval_128",
+        name: "ERE: addressed substitution with a space delimiter",
         arguments: ["-n", "-E", "-e", "1s a b "],
         script: "1s a b ",
         input: "",
@@ -2890,7 +1744,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "address_or_interval_130",
+        name: "ERE: nondigit interval maximum",
         arguments: ["-n", "-E", "-e", "s/a{2,x}/x/"],
         script: "s/a{2,x}/x/",
         input: "",
@@ -2900,7 +1754,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 1,
       },
       {
-        name: "boundary_131",
+        name: "BRE: substitution with a space delimiter",
         arguments: ["-n", "-e", "s a b "],
         script: "s a b ",
         input: "",
@@ -2909,7 +1763,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "boundary_132",
+        name: "ERE: substitution with a space delimiter",
         arguments: ["-n", "-E", "-e", "s a b "],
         script: "s a b ",
         input: "",
@@ -2918,7 +1772,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "boundary_133",
+        name: "BRE: space delimiter before slash-delimited text",
         arguments: ["-n", "-e", "s /a/b/"],
         script: "s /a/b/",
         input: "",
@@ -2928,7 +1782,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 1,
       },
       {
-        name: "boundary_134",
+        name: "ERE: space delimiter before slash-delimited text",
         arguments: ["-n", "-E", "-e", "s /a/b/"],
         script: "s /a/b/",
         input: "",
@@ -2938,7 +1792,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 1,
       },
       {
-        name: "boundary_135",
+        name: "BRE: translation with a space delimiter",
         arguments: ["-n", "-e", "y ab cd "],
         script: "y ab cd ",
         input: "",
@@ -2947,7 +1801,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "boundary_136",
+        name: "ERE: translation with a space delimiter",
         arguments: ["-n", "-E", "-e", "y ab cd "],
         script: "y ab cd ",
         input: "",
@@ -2956,7 +1810,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "boundary_137",
+        name: "BRE: missing step after a zero start",
         arguments: ["-n", "-e", "0~p"],
         script: "0~p",
         input: "",
@@ -2966,7 +1820,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 1,
       },
       {
-        name: "boundary_138",
+        name: "ERE: missing step after a zero start",
         arguments: ["-n", "-E", "-e", "0~p"],
         script: "0~p",
         input: "",
@@ -2976,7 +1830,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 1,
       },
       {
-        name: "boundary_139",
+        name: "BRE: zero start with a zero step",
         arguments: ["-n", "-e", "0~0p"],
         script: "0~0p",
         input: "",
@@ -2986,7 +1840,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 1,
       },
       {
-        name: "boundary_140",
+        name: "ERE: zero start with a zero step",
         arguments: ["-n", "-E", "-e", "0~0p"],
         script: "0~0p",
         input: "",
@@ -2996,7 +1850,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 1,
       },
       {
-        name: "boundary_141",
+        name: "BRE: missing step after a nonzero start",
         arguments: ["-n", "-e", "1~p"],
         script: "1~p",
         input: "",
@@ -3005,7 +1859,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "boundary_143",
+        name: "BRE: nonzero start with a zero step",
         arguments: ["-n", "-e", "1~0p"],
         script: "1~0p",
         input: "",
@@ -3014,7 +1868,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "boundary_144",
+        name: "ERE: nonzero start with a zero step",
         arguments: ["-n", "-E", "-e", "1~0p"],
         script: "1~0p",
         input: "",
@@ -3023,7 +1877,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "boundary_145",
+        name: "BRE: missing relative line count",
         arguments: ["-n", "-e", "1,+p"],
         script: "1,+p",
         input: "",
@@ -3032,7 +1886,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "boundary_146",
+        name: "ERE: missing relative line count",
         arguments: ["-n", "-E", "-e", "1,+p"],
         script: "1,+p",
         input: "",
@@ -3041,7 +1895,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "boundary_147",
+        name: "BRE: missing relative step",
         arguments: ["-n", "-e", "1,~p"],
         script: "1,~p",
         input: "",
@@ -3050,7 +1904,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "boundary_148",
+        name: "ERE: missing relative step",
         arguments: ["-n", "-E", "-e", "1,~p"],
         script: "1,~p",
         input: "",
@@ -3059,7 +1913,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "boundary_149",
+        name: "BRE: three line number addresses",
         arguments: ["-n", "-e", "1,2,3p"],
         script: "1,2,3p",
         input: "",
@@ -3069,7 +1923,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 1,
       },
       {
-        name: "boundary_153",
+        name: "BRE: escaped plus without a preceding atom",
         arguments: ["-n", "-e", "s/\\+/x/"],
         script: "s/\\+/x/",
         input: "",
@@ -3078,7 +1932,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "boundary_154",
+        name: "ERE: escaped plus without a preceding atom",
         arguments: ["-n", "-E", "-e", "s/\\+/x/"],
         script: "s/\\+/x/",
         input: "",
@@ -3087,7 +1941,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "boundary_155",
+        name: "BRE: escaped question mark without a preceding atom",
         arguments: ["-n", "-e", "s/\\?/x/"],
         script: "s/\\?/x/",
         input: "",
@@ -3096,7 +1950,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "boundary_156",
+        name: "ERE: escaped question mark without a preceding atom",
         arguments: ["-n", "-E", "-e", "s/\\?/x/"],
         script: "s/\\?/x/",
         input: "",
@@ -3105,7 +1959,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "boundary_157",
+        name: "BRE: escaped interval without a preceding atom",
         arguments: ["-n", "-e", "s/\\{2\\}/x/"],
         script: "s/\\{2\\}/x/",
         input: "",
@@ -3114,7 +1968,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "boundary_158",
+        name: "ERE: escaped interval without a preceding atom",
         arguments: ["-n", "-E", "-e", "s/\\{2\\}/x/"],
         script: "s/\\{2\\}/x/",
         input: "",
@@ -3123,7 +1977,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "boundary_159",
+        name: "BRE: raw interval without a preceding atom",
         arguments: ["-n", "-e", "s/{2}/x/"],
         script: "s/{2}/x/",
         input: "",
@@ -3132,7 +1986,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "boundary_160",
+        name: "ERE: raw interval without a preceding atom",
         arguments: ["-n", "-E", "-e", "s/{2}/x/"],
         script: "s/{2}/x/",
         input: "",
@@ -3142,7 +1996,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 1,
       },
       {
-        name: "boundary_161",
+        name: "BRE: consecutive start anchors",
         arguments: ["-n", "-e", "s/^^a/x/"],
         script: "s/^^a/x/",
         input: "",
@@ -3151,7 +2005,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "boundary_162",
+        name: "ERE: consecutive start anchors",
         arguments: ["-n", "-E", "-e", "s/^^a/x/"],
         script: "s/^^a/x/",
         input: "",
@@ -3160,7 +2014,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "boundary_163",
+        name: "BRE: star following an end anchor",
         arguments: ["-n", "-e", "s/a$*/x/"],
         script: "s/a$*/x/",
         input: "",
@@ -3169,7 +2023,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "boundary_164",
+        name: "ERE: star following an end anchor",
         arguments: ["-n", "-E", "-e", "s/a$*/x/"],
         script: "s/a$*/x/",
         input: "",
@@ -3179,7 +2033,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 1,
       },
       {
-        name: "boundary_165",
+        name: "BRE: star following a word boundary",
         arguments: ["-n", "-e", "s/\\b*/x/"],
         script: "s/\\b*/x/",
         input: "",
@@ -3188,7 +2042,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "boundary_166",
+        name: "ERE: star following a word boundary",
         arguments: ["-n", "-E", "-e", "s/\\b*/x/"],
         script: "s/\\b*/x/",
         input: "",
@@ -3198,7 +2052,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 1,
       },
       {
-        name: "quoted_delimiter_167",
+        name: "BRE: escaped star as the host delimiter",
         arguments: ["-n", "-e", "s*a\\**X*g;p"],
         script: "s*a\\**X*g;p",
         input: "aaa a*\n",
@@ -3207,7 +2061,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "quoted_delimiter_168",
+        name: "ERE: escaped star as the host delimiter",
         arguments: ["-n", "-E", "-e", "s*a\\**X*g;p"],
         script: "s*a\\**X*g;p",
         input: "aaa a*\n",
@@ -3216,7 +2070,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "quoted_delimiter_169",
+        name: "BRE: escaped dot as the host delimiter",
         arguments: ["-n", "-e", "s.a\\..X.g;p"],
         script: "s.a\\..X.g;p",
         input: "ab a.\n",
@@ -3225,7 +2079,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "quoted_delimiter_170",
+        name: "ERE: escaped dot as the host delimiter",
         arguments: ["-n", "-E", "-e", "s.a\\..X.g;p"],
         script: "s.a\\..X.g;p",
         input: "ab a.\n",
@@ -3234,7 +2088,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "quoted_delimiter_171",
+        name: "BRE: escaped vertical bar as the host delimiter",
         arguments: ["-n", "-e", "s|a\\|b|X|g;p"],
         script: "s|a\\|b|X|g;p",
         input: "a|b ab a b\n",
@@ -3243,7 +2097,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "quoted_delimiter_172",
+        name: "ERE: escaped vertical bar as the host delimiter",
         arguments: ["-n", "-E", "-e", "s|a\\|b|X|g;p"],
         script: "s|a\\|b|X|g;p",
         input: "a|b ab a b\n",
@@ -3252,7 +2106,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "quoted_delimiter_173",
+        name: "BRE: escaped opening bracket as the host delimiter",
         arguments: ["-n", "-e", "s[a\\[b[X[g;p"],
         script: "s[a\\[b[X[g;p",
         input: "a[b ab\n",
@@ -3262,7 +2116,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 1,
       },
       {
-        name: "quoted_delimiter_174",
+        name: "ERE: escaped opening bracket as the host delimiter",
         arguments: ["-n", "-E", "-e", "s[a\\[b[X[g;p"],
         script: "s[a\\[b[X[g;p",
         input: "a[b ab\n",
@@ -3272,7 +2126,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 1,
       },
       {
-        name: "quoted_delimiter_175",
+        name: "BRE: encoded backslash before star in a bracket",
         arguments: ["-n", "-e", "s/[\\x5c*]/X/g;p"],
         script: "s/[\\x5c*]/X/g;p",
         input: "\\*x\n",
@@ -3281,7 +2135,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         status: 0,
       },
       {
-        name: "quoted_delimiter_176",
+        name: "ERE: encoded backslash before star in a bracket",
         arguments: ["-n", "-E", "-e", "s/[\\x5c*]/X/g;p"],
         script: "s/[\\x5c*]/X/g;p",
         input: "\\*x\n",
@@ -6998,7 +5852,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
       const version = spawnSync(candidate, ["--version"], {
         encoding: "utf8",
         env: observations.environment,
-        timeout: 10_000,
+        timeout: runtimeTimeoutMs,
       });
       return (
         version.status === 0 &&
@@ -7024,7 +5878,7 @@ test("gsed: GNU sed runtime checks the documented supplementary cases", (t) => {
         env: observations.environment,
         input: scriptFile === "-" ? observation.script : observation.input,
         encoding: "utf8",
-        timeout: 10_000,
+        timeout: runtimeTimeoutMs,
       });
       assert.ifError(result.error);
       assert.equal(result.status, observation.status, observation.name);
